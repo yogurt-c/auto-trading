@@ -1,0 +1,55 @@
+"""SQLAlchemy engine and session factory."""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from pathlib import Path
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from .models import Base
+
+_DB_DEFAULT = Path(__file__).parent.parent / "data" / "portfolio.db"
+
+
+def _get_db_url() -> str:
+    import os
+    db_path = os.getenv("DB_PATH", str(_DB_DEFAULT))
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{db_path}"
+
+
+def _make_engine():
+    return create_engine(
+        _get_db_url(),
+        connect_args={"check_same_thread": False},
+        echo=False,
+    )
+
+
+engine = _make_engine()
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+@contextmanager
+def get_session() -> Session:
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def init_db() -> None:
+    """Run Alembic migrations to bring DB schema up to date."""
+    from alembic import command
+    from alembic.config import Config
+
+    Path(_DB_DEFAULT).parent.mkdir(parents=True, exist_ok=True)
+    cfg = Config(Path(__file__).parent.parent / "alembic.ini")
+    command.upgrade(cfg, "head")
