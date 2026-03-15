@@ -114,7 +114,7 @@ def _validate_strategy_params(
 def save_strategy(
     name: str,
     strategy_type: str,
-    description: str,
+    summary: str = "",
     ticker: str | None = None,
     ai_rationale: str | None = None,
     entry_price_drop_pct: float | None = None,
@@ -144,7 +144,7 @@ def save_strategy(
     result = db.save_strategy(
         name=name,
         strategy_type=strategy_type,
-        description=description,
+        description=summary,
         ticker=ticker,
         ai_rationale=ai_rationale,
         entry_price_drop_pct=entry_price_drop_pct,
@@ -502,7 +502,7 @@ STRATEGY_TOOLS = [
                     "type": "string",
                     "enum": ["dca", "momentum", "value", "stop_loss", "take_profit", "custom"],
                 },
-                "description": {"type": "string", "description": "Summary of the strategy agreed with user"},
+                "summary": {"type": "string", "description": "Summary of the strategy agreed with user"},
                 "ticker": {"type": "string", "description": "Target ticker (null = whole portfolio)"},
                 "ai_rationale": {"type": "string", "description": "AI's reasoning for this strategy"},
                 "entry_price_drop_pct": {"type": "number", "description": "Buy trigger: % drop from current price (negative, e.g. -5.0)"},
@@ -515,7 +515,7 @@ STRATEGY_TOOLS = [
                 "max_position_usd": {"type": "number", "description": "Maximum total investment in USD"},
                 "strategy_id": {"type": "integer", "description": "Existing strategy ID to update (omit to create new)"},
             },
-            "required": ["name", "strategy_type", "description"],
+            "required": ["name", "strategy_type"],
         },
     },
     {

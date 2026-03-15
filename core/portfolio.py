@@ -110,7 +110,7 @@ def get_strategies(status: str | None = None) -> list[dict]:
 def save_strategy(
     name: str,
     strategy_type: str,
-    description: str,
+    description: str = "",
     ticker: str | None = None,
     ai_rationale: str | None = None,
     entry_price_drop_pct: float | None = None,

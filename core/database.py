@@ -50,6 +50,7 @@ def init_db() -> None:
     from alembic import command
     from alembic.config import Config
 
-    Path(_DB_DEFAULT).parent.mkdir(parents=True, exist_ok=True)
+    db_url = _get_db_url()
     cfg = Config(Path(__file__).parent.parent / "alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", db_url)
     command.upgrade(cfg, "head")

@@ -15,11 +15,27 @@ Token optimizations:
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Any, Generator
 
 import anthropic
 from loguru import logger
+
+_HISTORY_LIMIT = 20  # orchestrator에 전달할 최대 메시지 수
+
+
+def _api_create_with_retry(client: anthropic.Anthropic, **kwargs) -> Any:
+    """429 rate limit 시 최대 3회 지수 백오프 재시도."""
+    for attempt in range(3):
+        try:
+            return client.messages.create(**kwargs)
+        except anthropic.RateLimitError as e:
+            if attempt == 2:
+                raise
+            wait = 2 ** attempt * 15  # 15s, 30s
+            logger.warning(f"rate limit hit, retrying in {wait}s (attempt {attempt + 1}/3)")
+            time.sleep(wait)
 
 from .tools import (
     PORTFOLIO_TOOLS,
@@ -65,8 +81,7 @@ Workflow:
 2. Use web_search to research the ticker if needed
 3. Summarize the agreed strategy clearly
 4. Call save_strategy to persist the structured parameters
-5. If the response contains warnings, explain each one to the user and ask if they want to adjust
-6. Confirm the strategy was saved and show the key parameters
+5. Confirm the strategy was saved, show the key parameters, and if warnings were returned include them in your response
 
 Always extract these structured fields when possible:
 - entry_price_drop_pct (e.g., buy on -5% dip)
@@ -229,7 +244,8 @@ def run_agent(
     cached_tools = _cached_tools(tools)
 
     for _ in range(max_iterations):
-        response = client.messages.create(
+        response = _api_create_with_retry(
+            client,
             model=model,
             max_tokens=max_tokens,
             system=cached_system,
@@ -294,7 +310,8 @@ def _run_subagent(agent_name: str, task: str) -> dict:
     text_parts: list[str] = []
 
     for iteration in range(defn.max_iterations):
-        response = client.messages.create(
+        response = _api_create_with_retry(
+            client,
             model=defn.model,
             max_tokens=defn.max_tokens,
             system=cached_system,
@@ -346,7 +363,7 @@ def stream_orchestrator(
     history: list of {"role": "user"|"assistant", "content": str}
     """
     messages = [
-        *history,
+        *history[-_HISTORY_LIMIT:],
         {"role": "user", "content": user_message},
     ]
     yield from run_agent(
