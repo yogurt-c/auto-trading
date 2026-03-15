@@ -109,7 +109,7 @@ def price_dashboard():
                 "평균 매입가": "${:,.2f}", "현재가": "${:,.2f}",
                 "평가금액": "${:,.2f}", "손익($)": "${:,.2f}", "손익(%)": "{:.2f}%",
             })
-            .applymap(_color_pnl, subset=["손익($)", "손익(%)"]),
+            .map(_color_pnl, subset=["손익($)", "손익(%)"]),
             use_container_width=True, hide_index=True,
         )
 

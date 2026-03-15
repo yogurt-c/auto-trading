@@ -137,23 +137,26 @@ runs = get_scheduler_runs(limit=20)
 if runs:
     run_rows = []
     for r in runs:
-        started = r.get("started_at")
-        finished = r.get("finished_at")
-        summary_full = r.get("summary") or ""
-        summary_short = summary_full[:80] + "…" if len(summary_full) > 80 else summary_full
-
         run_rows.append({
-            "시작시각": started,
-            "종료시각": finished,
+            "시작시각": r.get("started_at"),
+            "종료시각": r.get("finished_at"),
             "상태": r["status"],
             "체크 전략 수": r.get("strategies_checked", 0),
             "주문 수": r.get("orders_placed", 0),
             "오류": r.get("error_message") or "",
-            "요약": summary_short,
+            "요약": r.get("summary") or "",
         })
 
     run_df = pd.DataFrame(run_rows)
-    st.dataframe(run_df, use_container_width=True, hide_index=True)
+    st.dataframe(
+        run_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "요약": st.column_config.TextColumn("요약", width="large"),
+            "오류": st.column_config.TextColumn("오류", width="medium"),
+        },
+    )
 else:
     st.info("아직 스케줄러 실행 이력이 없습니다. 자동 매매를 활성화하면 이력이 쌓입니다.")
 
@@ -247,7 +250,7 @@ if logs:
     st.dataframe(
         log_df.style
         .format({"지정가": lambda x: f"${x:.2f}" if x else "—", "수량": "{:.4f}"})
-        .applymap(_color_status, subset=["상태"]),
+        .map(_color_status, subset=["상태"]),
         use_container_width=True, hide_index=True,
     )
 else:

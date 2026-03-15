@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from loguru import logger
+
 from .config import get_settings
 
 _client = None
@@ -53,6 +55,13 @@ def get_positions() -> list[dict]:
     ]
 
 
+def sync_positions() -> list[dict]:
+    """Alpaca 전체 포지션을 받아 로컬 holdings 테이블을 재구성."""
+    from . import portfolio as db
+    positions = get_positions()
+    return db.rebuild_holdings_from_alpaca(positions)
+
+
 def place_order(
     ticker: str,
     side: str,
@@ -60,6 +69,7 @@ def place_order(
     order_type: str = "market",
     limit_price: float | None = None,
 ) -> dict:
+    import time
     from alpaca.trading.enums import OrderSide, TimeInForce
     from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 
@@ -78,6 +88,22 @@ def place_order(
         )
 
     order = client.submit_order(req)
+    logger.info(f"order submitted: {side} {qty} {ticker} [{order_type}] id={order.id}")
+
+    # market order는 체결 대기 후 filled_avg_price 확보 (최대 5초)
+    filled_avg_price = None
+    if order_type == "market":
+        for _ in range(10):
+            time.sleep(0.5)
+            o = client.get_order_by_id(str(order.id))
+            if o.filled_avg_price is not None:
+                filled_avg_price = float(o.filled_avg_price)
+                order = o
+                logger.info(f"order filled: {ticker} @ {filled_avg_price}")
+                break
+        else:
+            logger.warning(f"fill price not confirmed after 5s: {ticker} id={order.id}")
+
     return {
         "alpaca_id": str(order.id),
         "ticker": order.symbol,
@@ -86,4 +112,5 @@ def place_order(
         "order_type": order.type.value,
         "status": order.status.value,
         "limit_price": float(order.limit_price) if order.limit_price else None,
+        "filled_avg_price": filled_avg_price,
     }

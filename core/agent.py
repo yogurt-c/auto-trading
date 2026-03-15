@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Generator
 
 import anthropic
+from loguru import logger
 
 from .tools import (
     PORTFOLIO_TOOLS,
@@ -64,7 +65,8 @@ Workflow:
 2. Use web_search to research the ticker if needed
 3. Summarize the agreed strategy clearly
 4. Call save_strategy to persist the structured parameters
-5. Confirm the strategy was saved and show the key parameters
+5. If the response contains warnings, explain each one to the user and ask if they want to adjust
+6. Confirm the strategy was saved and show the key parameters
 
 Always extract these structured fields when possible:
 - entry_price_drop_pct (e.g., buy on -5% dip)
@@ -89,10 +91,11 @@ Workflow:
    - Identify any patterns of missed signals or repeated failures
 2. Call get_strategies(status='active') to get all active strategies
 3. Call get_alpaca_account() to check current positions and buying power
-4. For each strategy, use web_search to check current market data
-   - For DCA strategies: check last_triggered_at. Buy is due if None or
-     (now - last_triggered_at) >= dca_frequency_days
-5. If entry/exit conditions are met (based on structured fields), call place_order
+4. For each strategy, call evaluate_strategy(strategy_id) to check conditions
+   - For DCA strategies: also call check_dca_due(strategy_id); only proceed if is_due is true
+   - Do NOT use web_search to manually fetch prices or compute conditions
+5. If evaluate_strategy returns entry_triggered=true or exit_triggered=true, call place_order
+   - Always pass max_position_usd from the strategy if it is set
 6. In your summary, mention: which strategies were checked, what conditions
    were evaluated, which orders were placed, and any concerns about strategy
    execution consistency based on historical runs.
@@ -255,6 +258,7 @@ def run_agent(
         for tool_block in tool_uses:
             tool_name = tool_block.name
             tool_input = tool_block.input
+            logger.debug(f"tool call: {tool_name}")
 
             if tool_name == "task":
                 result = _run_subagent(tool_input["agent"], tool_input["task"])
@@ -280,6 +284,8 @@ def _run_subagent(agent_name: str, task: str) -> dict:
     if defn is None:
         return {"error": f"Unknown sub-agent: {agent_name}"}
 
+    logger.info(f"subagent '{agent_name}' started")
+
     client = _build_client()
     messages = [{"role": "user", "content": task}]
     cached_system = _cached_system(defn.system_prompt)
@@ -287,7 +293,7 @@ def _run_subagent(agent_name: str, task: str) -> dict:
 
     text_parts: list[str] = []
 
-    for _ in range(defn.max_iterations):
+    for iteration in range(defn.max_iterations):
         response = client.messages.create(
             model=defn.model,
             max_tokens=defn.max_tokens,
@@ -306,12 +312,14 @@ def _run_subagent(agent_name: str, task: str) -> dict:
                 tool_uses.append(block)
 
         if response.stop_reason == "end_turn" or not tool_uses:
+            logger.info(f"subagent '{agent_name}' completed")
             return {"result": "".join(text_parts)}
 
         messages.append({"role": "assistant", "content": response.content})
 
         tool_results = []
         for tb in tool_uses:
+            logger.debug(f"tool call: {tb.name}")
             result = dispatch_tool(tb.name, tb.input)
             tool_results.append({
                 "type": "tool_result",
@@ -321,6 +329,7 @@ def _run_subagent(agent_name: str, task: str) -> dict:
 
         messages.append({"role": "user", "content": tool_results})
 
+    logger.warning(f"subagent '{agent_name}' reached max_iterations")
     return {"result": "".join(text_parts) if text_parts else "Sub-agent completed."}
 
 
@@ -355,8 +364,10 @@ def run_trade_executor() -> str:
     Run the trade executor sub-agent once (for scheduled/manual trigger).
     Returns the agent's summary.
     """
+    logger.info("run_trade_executor started")
     result = _run_subagent(
         "trade-executor",
         "Review all active strategies, check current market conditions, and execute any triggered orders.",
     )
+    logger.info("run_trade_executor completed")
     return result.get("result", "Trade executor completed.")

@@ -7,6 +7,7 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from loguru import logger
 
 _ET = ZoneInfo("America/New_York")
 _MARKET_OPEN = time(9, 30)
@@ -27,10 +28,6 @@ DEFAULT_INTERVAL_MINUTES = 30
 
 
 def _job() -> None:
-    # 장 외 시간에는 API 호출 없이 조용히 종료
-    if not _is_market_open():
-        return
-
     from .portfolio import (
         add_scheduler_run,
         get_strategies,
@@ -39,10 +36,26 @@ def _job() -> None:
     )
     from .agent import run_trade_executor
 
+    logger.debug("scheduler job fired")
+
+    # limit order 체결분 포함 항상 최신 포지션으로 갱신
+    try:
+        from .alpaca_client import sync_positions
+        sync_positions()
+        logger.info("holdings synced from Alpaca at job start")
+    except Exception as e:
+        logger.warning(f"pre-job Alpaca sync failed: {e}")
+
+    # 장 외 시간에는 그냥 종료
+    if not _is_market_open():
+        logger.info("market closed — run skipped")
+        return
+
     run = add_scheduler_run()  # status='running'
     try:
         active = get_strategies(status="active")
         ids = [s["id"] for s in active]
+        logger.info(f"trade executor started — {len(ids)} active strategies")
         summary = run_trade_executor()
 
         update_strategies_last_checked(ids)
@@ -53,7 +66,9 @@ def _job() -> None:
             strategies_checked=len(ids),
             summary=summary,
         )
+        logger.info(f"trade executor completed — run_id={run['id']}, strategies={len(ids)}")
     except Exception as e:
+        logger.error(f"trade executor failed: {e}")
         update_scheduler_run(
             run["id"],
             finished_at=datetime.now(),
@@ -81,6 +96,7 @@ def ensure_started() -> None:
                 current_interval = int(job.trigger.interval.total_seconds() // 60)
                 if current_interval != interval:
                     job.reschedule("interval", minutes=interval)
+                    logger.info(f"scheduler rescheduled to {interval}min")
             return
         # 새로 시작
         _scheduler = BackgroundScheduler(daemon=True)
@@ -93,6 +109,7 @@ def ensure_started() -> None:
             coalesce=True,
         )
         _scheduler.start()
+        logger.info(f"scheduler started, interval={interval}min")
 
 
 def _stop() -> None:
@@ -100,6 +117,7 @@ def _stop() -> None:
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)
         _scheduler = None
+        logger.info("scheduler stopped")
 
 
 def get_status() -> dict:

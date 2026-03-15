@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from .database import get_session
 from .models import Holding, SchedulerRun, Setting, Strategy, TradeLog, Transaction
@@ -67,6 +67,20 @@ def remove_holding(ticker: str) -> bool:
             return False
         s.delete(holding)
         return True
+
+
+def rebuild_holdings_from_alpaca(positions: list[dict]) -> list[dict]:
+    """Alpaca 전체 포지션으로 holdings 테이블을 원자적으로 재구성."""
+    with get_session() as s:
+        s.execute(delete(Holding))
+        for pos in positions:
+            s.add(Holding(
+                ticker=pos["ticker"],
+                shares=pos["qty"],
+                avg_price=pos["avg_entry_price"],
+            ))
+        s.commit()
+    return get_all_holdings()
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +192,7 @@ def add_trade_log(
         s.flush()
         result = log.to_dict()
 
-    if strategy_id and status == "filled":
+    if strategy_id and status != "failed":
         update_strategy_last_triggered(strategy_id)
 
     return result
@@ -244,9 +258,15 @@ def update_strategy_last_triggered(strategy_id: int) -> None:
 # Scheduler runs
 # ---------------------------------------------------------------------------
 
-def add_scheduler_run() -> dict:
+def add_scheduler_run(status: str = "running", finished_at=None, summary: str | None = None) -> dict:
     with get_session() as s:
-        run = SchedulerRun(status="running", strategies_checked=0, orders_placed=0)
+        run = SchedulerRun(
+            status=status,
+            strategies_checked=0,
+            orders_placed=0,
+            finished_at=finished_at,
+            summary=summary,
+        )
         s.add(run)
         s.flush()
         return run.to_dict()
