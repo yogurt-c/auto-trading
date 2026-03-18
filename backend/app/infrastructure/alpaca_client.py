@@ -62,6 +62,35 @@ def sync_positions() -> list[dict]:
     return db.rebuild_holdings_from_alpaca(positions)
 
 
+def get_filled_orders(limit: int = 50) -> list[dict]:
+    """Alpaca에서 체결 완료된 주문 이력 반환."""
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
+
+    client = _get_client()
+    orders = client.get_orders(GetOrdersRequest(
+        status=QueryOrderStatus.CLOSED,
+        limit=limit,
+    ))
+
+    result = []
+    for o in orders:
+        if o.status.value != "filled":
+            continue
+        filled_qty = float(o.filled_qty or 0)
+        filled_price = float(o.filled_avg_price or 0)
+        result.append({
+            "id": str(o.id),
+            "ticker": o.symbol,
+            "action": o.side.value,
+            "shares": filled_qty,
+            "price": filled_price,
+            "total": filled_qty * filled_price,
+            "executed_at": o.filled_at.isoformat() if o.filled_at else None,
+        })
+    return result
+
+
 def place_order(
     ticker: str,
     side: str,

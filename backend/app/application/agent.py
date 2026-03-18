@@ -226,7 +226,7 @@ ORCHESTRATOR_TOOLS = [*PORTFOLIO_TOOLS, WEB_SEARCH_TOOL, TASK_TOOL]
 # ---------------------------------------------------------------------------
 
 def _build_client() -> anthropic.Anthropic:
-    from infrastructure.config import get_settings
+    from app.infrastructure.config import get_settings
     api_key = get_settings().anthropic_api_key
     if not api_key:
         raise ValueError("Anthropic API 키가 설정되지 않았습니다. Settings 페이지에서 입력해 주세요.")

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from domain.trading_strategy.services import DcaScheduleChecker
+from app.domain.trading_strategy.services import DcaScheduleChecker
 
 
 @pytest.fixture

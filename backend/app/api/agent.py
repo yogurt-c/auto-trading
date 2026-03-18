@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from application.agent import run_trade_executor, stream_orchestrator
+from app.application.agent import run_trade_executor, stream_orchestrator
 
 router = APIRouter()
 

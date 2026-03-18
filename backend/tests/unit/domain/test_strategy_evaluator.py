@@ -2,8 +2,8 @@
 
 import pytest
 
-from domain.trading_strategy.services import StrategyEvaluator
-from domain.trading_strategy.value_objects import MarketData
+from app.domain.trading_strategy.services import StrategyEvaluator
+from app.domain.trading_strategy.value_objects import MarketData
 
 
 @pytest.fixture

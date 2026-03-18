@@ -49,9 +49,9 @@ def test_get_scheduler_runs_offset(app_client, db_scheduler_run):
 
 def test_get_scheduler_runs_offset_skips_items(app_client):
     """offset=0 과 offset=1 결과가 다르다 — 테스트 내에서 2건 직접 생성."""
-    from infrastructure import repository as db
-    from infrastructure.database import get_session
-    from infrastructure.models import SchedulerRun as SchedulerRunModel
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import SchedulerRun as SchedulerRunModel
     from sqlalchemy import delete as sa_delete
 
     run_a = db.add_scheduler_run(status="completed", summary="offset-test-A")

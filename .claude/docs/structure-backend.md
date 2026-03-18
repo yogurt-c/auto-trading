@@ -7,41 +7,43 @@
 ```
 backend/
 ├── __init__.py
-├── main.py                   # FastAPI app + lifespan(init_db, ensure_started) + CORS
+├── app/                      # DDD 구현 패키지 (소스 코드)
+│   ├── __init__.py
+│   ├── main.py               # FastAPI app + lifespan(init_db, ensure_started) + CORS
+│   ├── api/                  # Presentation Layer — FastAPI 라우터
+│   │   ├── __init__.py
+│   │   ├── portfolio.py      # GET /api/portfolio (P&L), sync, holdings, transactions
+│   │   ├── strategies.py     # CRUD + evaluate + dca-due
+│   │   ├── trading.py        # Alpaca account, orders, logs
+│   │   ├── agent.py          # SSE chat stream, trade-executor trigger
+│   │   └── scheduler.py      # scheduler status/runs/trigger + settings CRUD
+│   ├── application/          # Application Layer — 유스케이스 오케스트레이션
+│   │   ├── __init__.py
+│   │   ├── agent.py          # Orchestrator + sub-agent 루프 (Claude SDK)
+│   │   ├── scheduler.py      # APScheduler 싱글톤 (ensure_started, get_status)
+│   │   └── tools.py          # Agent tool 함수 + TOOL_MAP + Anthropic 스키마
+│   ├── infrastructure/       # Infrastructure Layer — 기술적 구현 (DB, 외부 API)
+│   │   ├── __init__.py
+│   │   ├── alpaca_client.py  # Alpaca Paper Trading API 래퍼
+│   │   ├── config.py         # Settings dataclass (SQLAlchemy 기반, 캐시)
+│   │   ├── database.py       # SQLite init (Alembic), get_session() 컨텍스트매니저
+│   │   ├── market.py         # get_current_prices() — Yahoo Finance (yfinance)
+│   │   ├── models.py         # SQLAlchemy ORM 모델 (Holding, Strategy, TradeLog …)
+│   │   └── repository.py     # Data Access Layer — 전체 테이블 CRUD 함수
+│   └── domain/               # Domain Layer — 순수 비즈니스 로직 (I/O 없음)
+│       ├── __init__.py
+│       ├── portfolio/
+│       │   ├── __init__.py
+│       │   ├── services.py   # PortfolioValuationService
+│       │   └── value_objects.py  # Money, HoldingValuation, PortfolioSnapshot
+│       └── trading_strategy/
+│           ├── __init__.py
+│           ├── services.py   # StrategyEvaluator, DcaScheduleChecker, StrategyValidator
+│           └── value_objects.py  # MarketData, EvaluationResult, ValidationWarning
 ├── requirements.txt          # 백엔드 전용 의존성
 ├── pytest.ini                # pytest 설정 (pythonpath=.., testpaths=tests)
 ├── .env.example              # 백엔드 환경변수 예시
 ├── alembic.ini               # Alembic 설정 (script_location = %(here)s/alembic)
-├── api/                      # Presentation Layer — FastAPI 라우터
-│   ├── __init__.py
-│   ├── portfolio.py          # GET /api/portfolio (P&L), sync, holdings, transactions
-│   ├── strategies.py         # CRUD + evaluate + dca-due
-│   ├── trading.py            # Alpaca account, orders, logs
-│   ├── agent.py              # SSE chat stream, trade-executor trigger
-│   └── scheduler.py          # scheduler status/runs/trigger + settings CRUD
-├── application/              # Application Layer — 유스케이스 오케스트레이션
-│   ├── __init__.py
-│   ├── agent.py              # Orchestrator + sub-agent 루프 (Claude SDK)
-│   ├── scheduler.py          # APScheduler 싱글톤 (ensure_started, get_status)
-│   └── tools.py              # Agent tool 함수 + TOOL_MAP + Anthropic 스키마
-├── infrastructure/           # Infrastructure Layer — 기술적 구현 (DB, 외부 API)
-│   ├── __init__.py
-│   ├── alpaca_client.py      # Alpaca Paper Trading API 래퍼
-│   ├── config.py             # Settings dataclass (SQLAlchemy 기반, 캐시)
-│   ├── database.py           # SQLite init (Alembic), get_session() 컨텍스트매니저
-│   ├── market.py             # get_current_prices() — Yahoo Finance (yfinance)
-│   ├── models.py             # SQLAlchemy ORM 모델 (Holding, Strategy, TradeLog …)
-│   └── repository.py         # Data Access Layer — 전체 테이블 CRUD 함수
-├── domain/                   # Domain Layer — 순수 비즈니스 로직 (I/O 없음)
-│   ├── __init__.py
-│   ├── portfolio/
-│   │   ├── __init__.py
-│   │   ├── services.py       # PortfolioValuationService
-│   │   └── value_objects.py  # Money, HoldingValuation, PortfolioSnapshot
-│   └── trading_strategy/
-│       ├── __init__.py
-│       ├── services.py       # StrategyEvaluator, DcaScheduleChecker, StrategyValidator
-│       └── value_objects.py  # MarketData, EvaluationResult, ValidationWarning
 ├── alembic/                  # DB 스키마 마이그레이션
 │   ├── env.py
 │   └── versions/
@@ -58,17 +60,17 @@ backend/
 
 ## 파일별 역할
 
-### `backend/api/` — Presentation Layer
+### `backend/app/api/` — Presentation Layer
 
 | 파일 | 역할 | 주요 의존성 |
 |------|------|------------|
-| `portfolio.py` | 포트폴리오 REST 엔드포인트 | `infrastructure.repository`, `infrastructure.market`, `domain.portfolio.services` |
-| `strategies.py` | 전략 CRUD + 평가 엔드포인트 | `infrastructure.repository`, `application.tools` |
-| `trading.py` | Alpaca 계좌·주문·로그 엔드포인트 | `infrastructure.alpaca_client`, `infrastructure.repository`, `application.tools` |
-| `agent.py` | SSE 스트리밍·trade-executor 엔드포인트 | `application.agent` |
-| `scheduler.py` | 스케줄러 상태·settings CRUD 엔드포인트 | `application.scheduler`, `infrastructure.repository`, `infrastructure.config`, `infrastructure.alpaca_client` |
+| `portfolio.py` | 포트폴리오 REST 엔드포인트 | `app.infrastructure.repository`, `app.infrastructure.market`, `app.domain.portfolio.services` |
+| `strategies.py` | 전략 CRUD + 평가 엔드포인트 | `app.infrastructure.repository`, `app.application.tools` |
+| `trading.py` | Alpaca 계좌·주문·로그 엔드포인트 | `app.infrastructure.alpaca_client`, `app.infrastructure.repository`, `app.application.tools` |
+| `agent.py` | SSE 스트리밍·trade-executor 엔드포인트 | `app.application.agent` |
+| `scheduler.py` | 스케줄러 상태·settings CRUD 엔드포인트 | `app.application.scheduler`, `app.infrastructure.repository`, `app.infrastructure.config`, `app.infrastructure.alpaca_client` |
 
-### `backend/application/` — Application Layer
+### `backend/app/application/` — Application Layer
 
 | 파일 | 역할 | 비고 |
 |------|------|------|
@@ -76,7 +78,7 @@ backend/
 | `scheduler.py` | APScheduler 싱글톤 | `ensure_started()` — FastAPI lifespan에서 호출 |
 | `tools.py` | Agent tool 구현체 + Anthropic 스키마 | domain service를 모듈 레벨 싱글톤으로 사용 |
 
-### `backend/infrastructure/` — Infrastructure Layer
+### `backend/app/infrastructure/` — Infrastructure Layer
 
 | 파일 | 역할 | 비고 |
 |------|------|------|
@@ -87,7 +89,7 @@ backend/
 | `models.py` | ORM: Holding, Transaction, Strategy, TradeLog, Setting, SchedulerRun | |
 | `repository.py` | 전체 DB CRUD 함수 | get_all_holdings, save_strategy, add_trade_log … |
 
-### `backend/domain/` — Domain Layer
+### `backend/app/domain/` — Domain Layer
 
 | 파일 | 역할 | 비고 |
 |------|------|------|
@@ -117,10 +119,10 @@ Domain (domain/)   ← 외부 의존성 없음 (순수 Python + Pydantic)
 ```
 
 **규칙:**
-- `backend/api/`는 `backend/application/` · `backend/infrastructure/` · `backend/domain/` 임포트 가능
-- `backend/application/`는 `backend/infrastructure/` · `backend/domain/` 임포트 가능
-- `backend/infrastructure/`는 `backend/domain/` 임포트 가능
-- `backend/domain/`은 외부 의존성 없음
+- `backend/app/api/`는 `backend/app/application/` · `backend/app/infrastructure/` · `backend/app/domain/` 임포트 가능
+- `backend/app/application/`는 `backend/app/infrastructure/` · `backend/app/domain/` 임포트 가능
+- `backend/app/infrastructure/`는 `backend/app/domain/` 임포트 가능
+- `backend/app/domain/`은 외부 의존성 없음
 
 ---
 
@@ -128,7 +130,7 @@ Domain (domain/)   ← 외부 의존성 없음 (순수 Python + Pydantic)
 
 ```bash
 # 백엔드 단독 실행
-make backend     # uvicorn backend.main:app --reload --port 8000
+make backend     # uvicorn app.main:app --reload --port 8000
 
 # 테스트
 pytest -c backend/pytest.ini

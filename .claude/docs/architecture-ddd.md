@@ -92,8 +92,6 @@ graph TB
 graph LR
     subgraph Portfolio
         H[Holding<br/>ticker · shares · avg_price]
-        T[Transaction<br/>감사 레코드]
-        H -->|1:N| T
     end
 
     subgraph TradingStrategy
@@ -167,7 +165,7 @@ graph LR
         P1["GET /api/portfolio<br/>holdings + P&L 스냅샷"]
         P2["POST /api/portfolio/sync<br/>Alpaca 포지션 동기화"]
         P3["GET /api/portfolio/holdings<br/>DB 목록 (시세 없음)"]
-        P4["GET /api/portfolio/transactions<br/>거래 내역"]
+        P4["GET /api/portfolio/transactions<br/>Alpaca 체결 주문 이력"]
     end
 
     subgraph strategies["/api/strategies"]

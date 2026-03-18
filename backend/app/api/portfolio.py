@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from infrastructure import repository as db
-from infrastructure import alpaca_client
-from infrastructure.market import get_current_prices
-from domain.portfolio.services import PortfolioValuationService
+from app.infrastructure import repository as db
+from app.infrastructure import alpaca_client
+from app.infrastructure.market import get_current_prices
+from app.domain.portfolio.services import PortfolioValuationService
 
 router = APIRouter()
 _valuation_service = PortfolioValuationService()
@@ -75,6 +75,11 @@ def get_holdings():
 
 @router.get("/portfolio/transactions")
 def get_transactions(limit: int = Query(50, ge=1, le=500)):
-    """거래 내역 반환."""
-    txns = db.get_transactions(limit=limit)
+    """Alpaca 체결 주문 이력 반환."""
+    try:
+        txns = alpaca_client.get_filled_orders(limit=limit)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Alpaca 주문 이력 조회 실패: {str(e)}")
     return {"transactions": txns, "count": len(txns)}

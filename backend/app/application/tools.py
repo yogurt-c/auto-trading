@@ -11,12 +11,12 @@ from typing import Any
 
 from loguru import logger
 
-from infrastructure import repository as db
-from infrastructure import alpaca_client
-from infrastructure import market as market_data
-from domain.trading_strategy.services import DcaScheduleChecker, StrategyEvaluator, StrategyValidator
-from domain.trading_strategy.value_objects import MarketData
-from domain.portfolio.services import PortfolioValuationService
+from app.infrastructure import repository as db
+from app.infrastructure import alpaca_client
+from app.infrastructure import market as market_data
+from app.domain.trading_strategy.services import DcaScheduleChecker, StrategyEvaluator, StrategyValidator
+from app.domain.trading_strategy.value_objects import MarketData
+from app.domain.portfolio.services import PortfolioValuationService
 
 _strategy_validator = StrategyValidator()
 _strategy_evaluator = StrategyEvaluator()

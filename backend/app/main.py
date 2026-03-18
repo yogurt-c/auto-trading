@@ -8,9 +8,9 @@ load_dotenv(".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from infrastructure.database import init_db
-from application.scheduler import ensure_started
-from api import portfolio, strategies, trading, agent, scheduler
+from app.infrastructure.database import init_db
+from app.application.scheduler import ensure_started
+from app.api import portfolio, strategies, trading, agent, scheduler
 
 
 @asynccontextmanager

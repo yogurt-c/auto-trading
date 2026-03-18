@@ -49,7 +49,7 @@ def init_db() -> None:
     from alembic.config import Config
 
     db_url = _get_db_url()
-    alembic_ini = Path(__file__).resolve().parent.parent / "alembic.ini"
+    alembic_ini = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
     cfg = Config(str(alembic_ini))
     cfg.set_main_option("sqlalchemy.url", db_url)
     command.upgrade(cfg, "head")

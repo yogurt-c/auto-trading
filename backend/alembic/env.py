@@ -10,7 +10,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Import models so Alembic can detect schema
-from infrastructure.models import Base
+from app.infrastructure.models import Base
 
 config = context.config
 fileConfig(config.config_file_name)

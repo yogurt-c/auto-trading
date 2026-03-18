@@ -81,8 +81,8 @@ def test_portfolio_e2e_with_mock_prices(app_client):
     ]
     prices = {"AAPL": 180.0, "MSFT": 350.0}
 
-    with patch("backend.api.portfolio.db.get_all_holdings", return_value=holdings), \
-         patch("api.portfolio.get_current_prices", return_value=prices):
+    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=holdings), \
+         patch("app.api.portfolio.get_current_prices", return_value=prices):
         resp = app_client.get("/api/portfolio")
 
     assert resp.status_code == 200

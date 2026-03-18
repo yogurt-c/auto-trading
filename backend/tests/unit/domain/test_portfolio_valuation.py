@@ -2,7 +2,7 @@
 
 import pytest
 
-from domain.portfolio.services import PortfolioValuationService
+from app.domain.portfolio.services import PortfolioValuationService
 
 
 @pytest.fixture

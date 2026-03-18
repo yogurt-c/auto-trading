@@ -7,12 +7,12 @@ SessionLocal are module-level singletons created at import time.
 import os
 
 # Set test DB path before any core imports
-os.environ.setdefault("DB_PATH", "data/test.db")
+os.environ.setdefault("DB_PATH", "backend/tests/data/test.db")
 
 import pytest
 from fastapi.testclient import TestClient
 
-from infrastructure.database import init_db
+from app.infrastructure.database import init_db
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -28,7 +28,7 @@ def app_client(_init_db):
     Uses TestClient without context manager to avoid triggering the lifespan
     (which starts the background scheduler — unnecessary in tests).
     """
-    from main import app
+    from app.main import app
 
     return TestClient(app)
 
@@ -53,7 +53,7 @@ def sample_strategy():
 @pytest.fixture
 def db_holding(_init_db):
     """Holding + Transaction 을 real DB에 생성하고 teardown에서 제거."""
-    from infrastructure import repository as db
+    from app.infrastructure import repository as db
     holding = db.upsert_holding("TESTHOLD", 8.0, 200.0)
     yield holding
     db.remove_holding("TESTHOLD")
@@ -62,9 +62,9 @@ def db_holding(_init_db):
 @pytest.fixture
 def db_trade_log(_init_db):
     """TradeLog를 real DB에 생성하고 teardown에서 제거."""
-    from infrastructure import repository as db
-    from infrastructure.database import get_session
-    from infrastructure.models import TradeLog as TradeLogModel
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import TradeLog as TradeLogModel
     from sqlalchemy import delete as sa_delete
 
     log = db.add_trade_log(
@@ -83,9 +83,9 @@ def db_trade_log(_init_db):
 @pytest.fixture
 def db_scheduler_run(_init_db):
     """SchedulerRun을 real DB에 생성하고 teardown에서 제거."""
-    from infrastructure import repository as db
-    from infrastructure.database import get_session
-    from infrastructure.models import SchedulerRun as SchedulerRunModel
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import SchedulerRun as SchedulerRunModel
     from sqlalchemy import delete as sa_delete
 
     run = db.add_scheduler_run(status="completed", summary="fixture run")

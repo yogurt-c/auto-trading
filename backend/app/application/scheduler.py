@@ -6,7 +6,7 @@ import threading
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-from infrastructure.timezone import now_kst
+from app.infrastructure.timezone import now_kst
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
@@ -30,7 +30,7 @@ DEFAULT_INTERVAL_MINUTES = 30
 
 
 def _job() -> None:
-    from infrastructure.repository import (
+    from app.infrastructure.repository import (
         add_scheduler_run,
         get_strategies,
         update_scheduler_run,
@@ -42,7 +42,7 @@ def _job() -> None:
 
     # limit order 체결분 포함 항상 최신 포지션으로 갱신
     try:
-        from infrastructure.alpaca_client import sync_positions
+        from app.infrastructure.alpaca_client import sync_positions
         sync_positions()
         logger.info("holdings synced from Alpaca at job start")
     except Exception as e:
@@ -82,7 +82,7 @@ def _job() -> None:
 def ensure_started() -> None:
     """설정 기반으로 스케줄러 시작/중지/재구성. app.py 재실행마다 호출."""
     global _scheduler
-    from infrastructure.repository import get_setting
+    from app.infrastructure.repository import get_setting
 
     enabled = get_setting("scheduler_enabled") == "true"
     interval_raw = get_setting("scheduler_interval_minutes")

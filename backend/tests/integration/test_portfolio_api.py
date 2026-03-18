@@ -11,7 +11,7 @@ import pytest
 
 def test_get_portfolio_empty(app_client):
     """Holdings 없을 때 → 빈 응답 반환."""
-    with patch("backend.api.portfolio.db.get_all_holdings", return_value=[]):
+    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=[]):
         resp = app_client.get("/api/portfolio")
     assert resp.status_code == 200
     data = resp.json()
@@ -23,8 +23,8 @@ def test_get_portfolio_empty(app_client):
 def test_get_portfolio_with_holdings(app_client):
     """Mock holdings + mock prices → P&L 포함 응답."""
     holdings = [{"ticker": "AAPL", "shares": 10.0, "avg_price": 100.0}]
-    with patch("backend.api.portfolio.db.get_all_holdings", return_value=holdings), \
-         patch("api.portfolio.get_current_prices", return_value={"AAPL": 120.0}):
+    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=holdings), \
+         patch("app.api.portfolio.get_current_prices", return_value={"AAPL": 120.0}):
         resp = app_client.get("/api/portfolio")
     assert resp.status_code == 200
     data = resp.json()
@@ -47,8 +47,8 @@ def test_get_portfolio_with_holdings(app_client):
 def test_get_portfolio_failed_tickers(app_client):
     """가격 조회 실패한 ticker는 failed_tickers에 포함, avg_price로 fallback."""
     holdings = [{"ticker": "UNKNOWN", "shares": 5.0, "avg_price": 50.0}]
-    with patch("backend.api.portfolio.db.get_all_holdings", return_value=holdings), \
-         patch("api.portfolio.get_current_prices", return_value={}):
+    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=holdings), \
+         patch("app.api.portfolio.get_current_prices", return_value={}):
         resp = app_client.get("/api/portfolio")
     assert resp.status_code == 200
     data = resp.json()
@@ -62,8 +62,8 @@ def test_get_portfolio_failed_tickers(app_client):
 def test_get_portfolio_response_structure(app_client):
     """응답에 필수 필드가 모두 포함되어 있는지 확인."""
     holdings = [{"ticker": "TSLA", "shares": 3.0, "avg_price": 200.0}]
-    with patch("backend.api.portfolio.db.get_all_holdings", return_value=holdings), \
-         patch("api.portfolio.get_current_prices", return_value={"TSLA": 210.0}):
+    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=holdings), \
+         patch("app.api.portfolio.get_current_prices", return_value={"TSLA": 210.0}):
         resp = app_client.get("/api/portfolio")
     data = resp.json()
     required_keys = {"holdings", "summary", "failed_tickers", "count"}
@@ -85,32 +85,61 @@ def test_get_holdings(app_client, db_holding):
     assert our_h["avg_price"] == pytest.approx(200.0)
 
 
-def test_get_transactions(app_client, db_holding):
-    """GET /api/portfolio/transactions → 거래 내역 반환."""
-    resp = app_client.get("/api/portfolio/transactions")
+def test_get_transactions(app_client):
+    """GET /api/portfolio/transactions → Alpaca 체결 주문 이력 반환."""
+    mock_orders = [
+        {
+            "id": "abc-123",
+            "ticker": "AAPL",
+            "action": "buy",
+            "shares": 10.0,
+            "price": 150.0,
+            "total": 1500.0,
+            "executed_at": "2026-03-18T10:30:00+09:00",
+        }
+    ]
+    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", return_value=mock_orders):
+        resp = app_client.get("/api/portfolio/transactions")
     assert resp.status_code == 200
     data = resp.json()
     assert "transactions" in data
     assert "count" in data
-    our_t = next(t for t in data["transactions"] if t["ticker"] == "TESTHOLD")
-    assert our_t["action"] == "buy"
-    assert our_t["shares"] == pytest.approx(8.0)
-    assert our_t["price"] == pytest.approx(200.0)
-    assert our_t["total"] == pytest.approx(1600.0)
+    assert data["count"] == 1
+    t = data["transactions"][0]
+    assert t["id"] == "abc-123"
+    assert t["ticker"] == "AAPL"
+    assert t["action"] == "buy"
+    assert t["shares"] == pytest.approx(10.0)
+    assert t["price"] == pytest.approx(150.0)
+    assert t["total"] == pytest.approx(1500.0)
 
 
 def test_get_transactions_limit_param(app_client):
     """GET /api/portfolio/transactions?limit=10 → limit 파라미터 수용."""
-    with patch("backend.api.portfolio.db.get_transactions", return_value=[]) as mock_txns:
+    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", return_value=[]) as mock_fn:
         resp = app_client.get("/api/portfolio/transactions?limit=10")
     assert resp.status_code == 200
-    mock_txns.assert_called_once_with(limit=10)
+    mock_fn.assert_called_once_with(limit=10)
+
+
+def test_get_transactions_alpaca_failure(app_client):
+    """Alpaca 오류 시 503 반환."""
+    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", side_effect=Exception("Alpaca error")):
+        resp = app_client.get("/api/portfolio/transactions")
+    assert resp.status_code == 503
+
+
+def test_get_transactions_alpaca_key_missing(app_client):
+    """Alpaca API 키 미설정 시 400 반환."""
+    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", side_effect=ValueError("API 키 없음")):
+        resp = app_client.get("/api/portfolio/transactions")
+    assert resp.status_code == 400
 
 
 def test_sync_holdings_success(app_client):
     """POST /api/portfolio/sync → Alpaca mock 성공."""
     mock_positions = [{"ticker": "AAPL", "qty": 5.0, "avg_entry_price": 150.0}]
-    with patch("backend.api.portfolio.alpaca_client.sync_positions", return_value=mock_positions):
+    with patch("backend.app.api.portfolio.alpaca_client.sync_positions", return_value=mock_positions):
         resp = app_client.post("/api/portfolio/sync")
     assert resp.status_code == 200
     data = resp.json()
@@ -121,6 +150,6 @@ def test_sync_holdings_success(app_client):
 
 def test_sync_holdings_failure(app_client):
     """POST /api/portfolio/sync → Alpaca 오류 시 503 반환."""
-    with patch("backend.api.portfolio.alpaca_client.sync_positions", side_effect=Exception("Alpaca error")):
+    with patch("backend.app.api.portfolio.alpaca_client.sync_positions", side_effect=Exception("Alpaca error")):
         resp = app_client.post("/api/portfolio/sync")
     assert resp.status_code == 503

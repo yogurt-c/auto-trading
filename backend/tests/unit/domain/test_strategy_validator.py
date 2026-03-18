@@ -2,7 +2,7 @@
 
 import pytest
 
-from domain.trading_strategy.services import StrategyValidator
+from app.domain.trading_strategy.services import StrategyValidator
 
 
 @pytest.fixture

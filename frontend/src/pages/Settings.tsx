@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import styled from '@emotion/styled'
+import * as Switch from '@radix-ui/react-switch'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { settingsApi } from '../api/endpoints'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
@@ -19,6 +20,18 @@ export default function Settings() {
 
   const [form, setForm] = useState<Record<string, string>>({})
   const [toast, setToast] = useState<string | null>(null)
+
+  const isPaper = settings?.['ALPACA_PAPER'] !== 'false'
+
+  const paperMutation = useMutation({
+    mutationFn: (paper: boolean) =>
+      settingsApi.set('ALPACA_PAPER', paper ? 'true' : 'false'),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] })
+      setToast('거래 모드가 변경되었습니다')
+      setTimeout(() => setToast(null), 2500)
+    },
+  })
 
   const mutation = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) =>
@@ -45,6 +58,30 @@ export default function Settings() {
     <Page>
       <PageTitle>Settings</PageTitle>
       <Card>
+        <Section>
+          <SectionTitle>거래 모드</SectionTitle>
+          <ModeRow>
+            <ModeInfo>
+              <ModeLabel>Paper Trading</ModeLabel>
+              <ModeDesc>
+                {isPaper
+                  ? '모의 거래 모드 — 실제 자금을 사용하지 않습니다'
+                  : '실거래 모드 — 실제 자금으로 주문이 실행됩니다'}
+              </ModeDesc>
+            </ModeInfo>
+            <SwitchRoot
+              checked={isPaper}
+              onCheckedChange={checked => paperMutation.mutate(checked)}
+              disabled={paperMutation.isPending || isLoading}
+            >
+              <SwitchThumb />
+            </SwitchRoot>
+          </ModeRow>
+          {!isPaper && (
+            <LiveWarning>⚠ 실거래 모드: 실제 자금으로 주문이 즉시 실행됩니다.</LiveWarning>
+          )}
+        </Section>
+
         <Section>
           <SectionTitle>API Keys</SectionTitle>
           {SETTING_FIELDS.map(field => (
@@ -180,6 +217,77 @@ const SaveBtn = styled.button`
     opacity: 0.5;
     cursor: not-allowed;
   }
+`
+
+const ModeRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`
+
+const ModeInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`
+
+const ModeLabel = styled.span`
+  font-size: ${fontSize.sm};
+  font-weight: 500;
+  color: ${colors.text};
+`
+
+const ModeDesc = styled.span`
+  font-size: ${fontSize.xs};
+  color: ${colors.textMuted};
+`
+
+const SwitchRoot = styled(Switch.Root)`
+  width: 44px;
+  height: 24px;
+  background: ${colors.border};
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+
+  &[data-state='checked'] {
+    background: ${colors.primary};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`
+
+const SwitchThumb = styled(Switch.Thumb)`
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+
+  &[data-state='checked'] {
+    transform: translateX(20px);
+  }
+`
+
+const LiveWarning = styled.div`
+  margin-top: ${spacing.md};
+  padding: ${spacing.sm} ${spacing.md};
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid ${colors.danger};
+  border-radius: ${radius.sm};
+  color: ${colors.danger};
+  font-size: ${fontSize.sm};
+  font-weight: 500;
 `
 
 const Toast = styled.div`

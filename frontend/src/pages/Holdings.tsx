@@ -66,7 +66,7 @@ export default function Holdings() {
     staleTime: 30_000,
   })
 
-  const { data: transactions, isLoading: txLoading } = useQuery({
+  const { data: transactions, isLoading: txLoading, isError: txError } = useQuery({
     queryKey: ['transactions'],
     queryFn: () => portfolioApi.transactions(50),
     staleTime: 30_000,
@@ -114,11 +114,15 @@ export default function Holdings() {
 
       <Section>
         <SectionTitle>최근 거래내역 {txLoading ? '(로딩 중...)' : `(${transactions?.length ?? 0})`}</SectionTitle>
-        <DataTable<Transaction>
-          columns={txColumns}
-          data={transactions ?? []}
-          emptyMessage="거래 내역 없음"
-        />
+        {txError ? (
+          <Banner success={false}>Alpaca 주문 이력 조회 실패 — Settings 페이지에서 API 키를 확인해 주세요.</Banner>
+        ) : (
+          <DataTable<Transaction>
+            columns={txColumns}
+            data={transactions ?? []}
+            emptyMessage="거래 내역 없음"
+          />
+        )}
       </Section>
     </Page>
   )

@@ -11,7 +11,7 @@ export interface Holding {
 }
 
 export interface Transaction {
-  id: number
+  id: string
   symbol: string
   transaction_type: 'BUY' | 'SELL'
   quantity: number

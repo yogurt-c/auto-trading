@@ -3,8 +3,8 @@
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from infrastructure import repository as db
-from application.scheduler import ensure_started, get_status
+from app.infrastructure import repository as db
+from app.application.scheduler import ensure_started, get_status
 
 router = APIRouter()
 
@@ -44,8 +44,8 @@ def settings_status():
 
     응답: { ok: bool, reason: 'ok'|'missing'|'invalid', message: str }
     """
-    from infrastructure.config import get_settings
-    from infrastructure import alpaca_client
+    from app.infrastructure.config import get_settings
+    from app.infrastructure import alpaca_client
 
     s = get_settings()
     if not s.is_configured:
@@ -80,8 +80,8 @@ def save_setting(key: str, req: SettingValue):
     """설정 저장. API 키 변경 시 클라이언트 리로드."""
     db.save_setting(key, req.value)
     if key in ("ANTHROPIC_API_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_PAPER"):
-        from infrastructure.config import reload_settings
-        from infrastructure.alpaca_client import reset_client
+        from app.infrastructure.config import reload_settings
+        from app.infrastructure.alpaca_client import reset_client
         reload_settings()
         reset_client()
     return {"success": True}

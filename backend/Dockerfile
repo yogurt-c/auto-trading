@@ -20,4 +20,4 @@ ENV ROOT_PATH=/
 EXPOSE $PORT
 
 # sh -c를 JSON 배열로 명시 — 환경변수 치환 + 시그널 처리 모두 지원
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT --root-path $ROOT_PATH"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port $PORT --root-path $ROOT_PATH"]
