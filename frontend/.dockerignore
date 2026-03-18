@@ -1,0 +1,16 @@
+# 의존성 (빌드 중 npm ci로 설치)
+node_modules/
+
+# 빌드 산출물 (빌드 스테이지에서 생성)
+dist/
+
+# 환경변수 (로컬 전용만 제외, .env.production은 빌드에 필요)
+.env.local
+.env.*.local
+
+# 기타
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+*.md

@@ -1,61 +1,19 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+AI-powered financial portfolio management tool — monitors holdings, runs automated trading strategies via Alpaca, and provides a Claude AI agent for natural language interaction.
 
-## Project
+## Rules
 
-AI-powered financial portfolio management tool built with Streamlit + Claude Agent SDK + Alpaca Paper Trading.
-
-## Running
-
-```bash
-# Activate the virtual environment first
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy and fill in API keys
-cp .env.example .env
-
-# Run the Streamlit app
-streamlit run app.py  # http://localhost:8501
-```
-
-## Environment
-
-- Python 3.11 (managed via `venv/`)
-- External dependencies in `requirements.txt`
-- IDE: PyCharm (`.idea/` configuration present)
-- Secrets in `.env` (gitignored)
-
-## Architecture
-
-```
-app.py                    # Streamlit entry point
-pages/
-├── 1_Dashboard.py        # Portfolio overview, P&L, pie chart
-├── 2_Holdings.py         # Holdings CRUD
-├── 3_Analysis.py         # AI chat (orchestrator agent)
-└── 4_Auto_Trading.py     # Auto trading config & logs
-core/
-├── database.py           # SQLite init (data/portfolio.db)
-├── portfolio.py          # Data access layer
-├── alpaca_client.py      # Alpaca API wrapper
-├── tools.py              # Agent tool functions
-└── agent.py              # Orchestrator + sub-agent logic
-data/
-└── portfolio.db          # Auto-created SQLite DB
-```
-
-## Agent Pattern
-
-- **Orchestrator**: handles general Q&A, delegates to sub-agents via Task tool
-- **Strategy Advisor sub-agent**: extracts structured strategy params, saves to DB
-- **Trade Executor sub-agent**: checks strategy conditions, places Alpaca orders
-
-## Key Notes
-
+- `frontend/pages/` must only use `frontend.api_client` — never import `backend/` directly
 - Alpaca is configured for **Paper Trading** (safe for testing)
-- DB auto-initializes on first run
-- WebSearch is a built-in Anthropic API tool (`web_search_20250305`)
+
+## References
+
+| 문서 | 설명 |
+|------|------|
+| [structure-backend.md](.claude/docs/structure-backend.md) | 백엔드 파일 트리·레이어별 역할·의존 방향 |
+| [structure-frontend.md](.claude/docs/structure-frontend.md) | 프론트엔드 파일 트리·컴포넌트·페이지 역할 |
+| [architecture-ddd.md](.claude/docs/architecture-ddd.md) | 레이어 다이어그램·REST API 목록·Agent 흐름 |
+| [domain-portfolio.md](.claude/docs/domain-portfolio.md) | Portfolio 도메인 명세 |
+| [domain-strategy.md](.claude/docs/domain-strategy.md) | TradingStrategy 도메인 명세 |
+| [checklist-development.md](.claude/docs/checklist-development.md) | 구현 완료 후 점검 체크리스트 |

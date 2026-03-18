@@ -1,0 +1,223 @@
+# Architecture: DDD 4계층 + Backend/Frontend Split
+
+---
+
+## 전체 레이어 구조
+
+```mermaid
+graph TB
+    subgraph FE["Frontend (React+Vite :5173)"]
+        P0[pages/Settings.tsx]
+        P1[pages/Dashboard.tsx]
+        P2[pages/Holdings.tsx]
+        P3[pages/Analysis.tsx]
+        P4[pages/AutoTrading.tsx]
+        AC[api/endpoints.ts + sseClient.ts<br/>axios / fetch 래퍼]
+        P0 & P1 & P2 & P3 & P4 --> AC
+    end
+
+    HTTP{{"HTTP / SSE\n:8000"}}
+
+    subgraph BE["Presentation Layer (backend/api/ :8000)"]
+        B1[api/portfolio.py<br/>GET /api/portfolio/*]
+        B2[api/strategies.py<br/>CRUD /api/strategies/*]
+        B3[api/trading.py<br/>GET /api/trading/*]
+        B4[api/agent.py<br/>POST /api/agent/* SSE]
+        B5[api/scheduler.py<br/>GET /api/scheduler/*<br/>PUT /api/settings/*]
+    end
+
+    subgraph Application["Application Layer (backend/application/)"]
+        A1[agent.py<br/>stream_orchestrator<br/>Orchestrator Agent]
+        A2[agent.py<br/>run_trade_executor<br/>Trade Executor Sub-agent]
+        A3[scheduler.py<br/>_job · ensure_started<br/>APScheduler]
+        AT[tools.py<br/>Agent Tool Functions · I/O Dispatch]
+    end
+
+    subgraph Domain["Domain Layer (backend/domain/)"]
+        subgraph BC1["Bounded Context: Portfolio"]
+            D1[PortfolioValuationService]
+            D2[Money · HoldingValuation<br/>PortfolioSnapshot]
+        end
+        subgraph BC2["Bounded Context: TradingStrategy"]
+            D3[StrategyEvaluator]
+            D4[DcaScheduleChecker]
+            D5[StrategyValidator]
+            D6[MarketData · EvaluationResult<br/>ValidationWarning]
+        end
+    end
+
+    subgraph Infra["Infrastructure Layer (backend/infrastructure/)"]
+        I1[repository.py<br/>SQLite DAL]
+        I2[alpaca_client.py<br/>Alpaca Paper Trading]
+        I3[market.py<br/>Yahoo Finance]
+        I4[database.py + models.py<br/>SQLAlchemy ORM]
+        I5[config.py<br/>Settings 캐시]
+    end
+
+    subgraph External["External Services"]
+        E1[(data/portfolio.db<br/>SQLite)]
+        E2[Alpaca API]
+        E3[Yahoo Finance]
+        E4[Claude API<br/>Sonnet 4.6 / Haiku 4.5]
+    end
+
+    AC -->|REST / SSE| HTTP
+    HTTP --> B1 & B2 & B3 & B4 & B5
+
+    B1 --> D1 & I1 & I3
+    B2 --> I1 & AT
+    B3 --> I2 & I1 & AT
+    B4 --> A1 & A2
+    B5 --> A3 & I1
+
+    A1 & A2 -->|Tool calls| AT
+    A3 --> A2
+    A1 & A2 --> I5
+
+    AT --> I1 & I2 & I3
+    AT --> D3 & D4 & D5
+
+    I1 --> I4 --> E1
+    I2 --> I5
+    I2 --> E2
+    I3 --> E3
+    A1 & A2 --> E4
+```
+
+---
+
+## 도메인 간 관계
+
+```mermaid
+graph LR
+    subgraph Portfolio
+        H[Holding<br/>ticker · shares · avg_price]
+        T[Transaction<br/>감사 레코드]
+        H -->|1:N| T
+    end
+
+    subgraph TradingStrategy
+        S[Strategy<br/>id · ticker · type · status]
+        TL[TradeLog<br/>실행 이력]
+        S -->|1:N| TL
+    end
+
+    S -->|ticker 참조| H
+    TL -->|주문 완료 후<br/>Alpaca Position Sync| H
+```
+
+---
+
+## Agent 실행 흐름 (채팅 + 자동매매)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as React<br/>Analysis.tsx
+    participant AC as sseClient.ts
+    participant BAPI as api/agent.py
+    participant Orch as Orchestrator<br/>application/agent.py
+    participant Advisor as Strategy Advisor<br/>Sub-agent
+    participant Exec as Trade Executor<br/>Sub-agent
+    participant Tools as application/tools.py
+    participant Domain as domain/ services
+    participant DB as SQLite
+    participant Alpaca as Alpaca API
+
+    rect rgb(230, 245, 255)
+        Note over User,Alpaca: 채팅 흐름 (SSE 스트리밍)
+        User->>UI: 전략 생성 요청 (자연어)
+        UI->>AC: streamChat(msg, history)
+        AC->>BAPI: POST /api/agent/chat/stream
+        BAPI->>Orch: stream_orchestrator()
+        Orch->>Advisor: Task tool 위임
+        Advisor->>Tools: save_strategy()
+        Tools->>Domain: StrategyValidator.validate()
+        Tools->>DB: Strategy INSERT
+        BAPI-->>AC: SSE data chunks
+        AC-->>UI: AsyncGenerator yield token
+    end
+
+    rect rgb(255, 245, 230)
+        Note over User,Alpaca: 자동매매 스케줄러 (backend lifespan → APScheduler)
+        Orch->>Exec: _job() → run_trade_executor()
+        Exec->>Tools: get_strategies(status=active)
+        Tools->>DB: Strategy SELECT
+        Exec->>Tools: evaluate_strategy(id)
+        Tools->>Alpaca: yfinance 현재가·RSI 조회
+        Tools->>Domain: StrategyEvaluator.evaluate(MarketData)
+        Domain-->>Tools: EvaluationResult
+        Exec->>Tools: check_dca_due(id)
+        Tools->>Domain: DcaScheduleChecker.is_due()
+        Exec->>Tools: place_order(...)
+        Tools->>Alpaca: 주문 실행
+        Tools->>DB: TradeLog INSERT
+        Tools->>Alpaca: sync_positions()
+        Tools->>DB: Holding REPLACE
+    end
+```
+
+---
+
+## REST API 엔드포인트 목록
+
+```mermaid
+graph LR
+    subgraph portfolio["/api/portfolio"]
+        P1["GET /api/portfolio<br/>holdings + P&L 스냅샷"]
+        P2["POST /api/portfolio/sync<br/>Alpaca 포지션 동기화"]
+        P3["GET /api/portfolio/holdings<br/>DB 목록 (시세 없음)"]
+        P4["GET /api/portfolio/transactions<br/>거래 내역"]
+    end
+
+    subgraph strategies["/api/strategies"]
+        S1["GET /api/strategies<br/>?status= 필터"]
+        S2["POST /api/strategies<br/>생성·업데이트"]
+        S3["PATCH /api/strategies/{id}/status"]
+        S4["DELETE /api/strategies/{id}"]
+        S5["GET /api/strategies/{id}/evaluate<br/>진입·청산 조건 평가"]
+        S6["GET /api/strategies/{id}/dca-due<br/>DCA 시점 확인"]
+    end
+
+    subgraph trading["/api/trading"]
+        T1["GET /api/trading/account<br/>Alpaca 계좌 정보"]
+        T2["POST /api/trading/orders<br/>주문 실행"]
+        T3["GET /api/trading/logs<br/>매매 로그"]
+    end
+
+    subgraph agent["/api/agent"]
+        A1["POST /api/agent/chat/stream<br/>SSE 오케스트레이터"]
+        A2["POST /api/agent/trade-executor<br/>수동 실행"]
+    end
+
+    subgraph sched["/api/scheduler + /api/settings"]
+        SC1["GET /api/scheduler/status"]
+        SC2["GET /api/scheduler/runs"]
+        SC3["POST /api/scheduler/trigger"]
+        SC4["GET /api/settings"]
+        SC5["PUT /api/settings/{key}"]
+    end
+```
+
+---
+
+## 프로세스 구성
+
+```mermaid
+graph LR
+    subgraph Dev["개발 환경 (make dev)"]
+        BE2["uvicorn backend.main:app<br/>:8000"]
+        FE2["vite dev server<br/>:5173"]
+        FE2 <-->|proxy /api → :8000| BE2
+    end
+
+    subgraph Prod["프로덕션"]
+        BE3["uvicorn :8000"]
+        FE3["vite build → static files<br/>(nginx 또는 서빙)"]
+        FE3 <-->|REST / SSE| BE3
+    end
+
+    Client --> FE2
+    Client --> FE3
+    Client -->|Swagger| BE2
+```

@@ -1,0 +1,30 @@
+# 가상환경
+venv/
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.ruff_cache/
+
+# 환경변수
+.env
+
+# 테스트
+.pytest_cache/
+tests/
+.coverage
+htmlcov/
+
+# 데이터 (볼륨으로 마운트)
+*.db
+data/
+
+# 기타
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+*.md

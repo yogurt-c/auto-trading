@@ -14,52 +14,55 @@ Claude AI 기반 미국 주식/ETF 포트폴리오 관리 툴.
 
 ## 시작하기
 
-### Docker (권장)
+### Docker
 
 ```bash
-docker build -t portfolio .
-docker run -p 8501:8501 -v ~/portfolio-data:/app/data portfolio
+# Backend
+docker build --platform linux/amd64 -t portfolio-backend ./backend
+
+# Frontend
+docker build --platform linux/amd64 -t portfolio-frontend ./frontend
 ```
 
-1. `http://localhost:8501` 접속
-2. **Settings** 페이지에서 API 키 입력 (최초 1회)
-3. 완료 — 이후 재시작해도 키와 데이터 유지
-
 데이터는 `~/portfolio-data/`에 영구 저장됩니다.
+
+> M1/M2(Apple Silicon)에서 로컬 실행 시 `--platform linux/arm64`로 변경
 
 #### API 키 발급 위치
 
 - **Anthropic** → [console.anthropic.com](https://console.anthropic.com) → API Keys
 - **Alpaca** → [alpaca.markets](https://alpaca.markets) 가입 → 대시보드 상단 **Paper Trading** 선택 → **Your API Keys** → Generate New Key
 
-### PyCharm / 터미널
+### 로컬 개발
 
 ```bash
-pip install -r requirements.txt
-streamlit run app.py  # 또는 PyCharm에서 main.py 실행
+make install   # 의존성 설치
+make dev       # backend + frontend 동시 실행
 ```
+
+- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:5173`
 
 ## 프로젝트 구조
 
 ```
 portfolio/
-├── app.py                    # Streamlit 진입점
-├── pages/
-│   ├── 1_Dashboard.py        # 포트폴리오 현황
-│   ├── 2_Holdings.py         # 종목 CRUD
-│   ├── 3_Analysis.py         # AI 채팅
-│   └── 4_Auto_Trading.py     # 자동 매매
-├── core/
-│   ├── database.py           # SQLite 초기화
-│   ├── portfolio.py          # 데이터 접근 레이어
-│   ├── alpaca_client.py      # Alpaca API 래퍼
-│   ├── tools.py              # 에이전트 도구 함수
-│   └── agent.py              # 오케스트레이터 + 서브에이전트
-├── data/
-│   └── portfolio.db          # SQLite DB (자동 생성)
-├── .env                      # API 키 (gitignore됨)
-├── .env.example
-└── requirements.txt
+├── backend/                  # FastAPI (DDD 4계층)
+│   ├── api/                  # Presentation: 라우터
+│   ├── application/          # Application: agent, tools, scheduler
+│   ├── domain/               # Domain: 순수 비즈니스 로직
+│   ├── infrastructure/       # Infrastructure: DB, Alpaca, 시세
+│   ├── alembic/              # DB 마이그레이션
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/                 # React + Vite + TypeScript
+│   ├── src/
+│   │   ├── api/              # axios client, SSE, types
+│   │   ├── components/       # 공통 컴포넌트
+│   │   └── pages/            # Dashboard, Holdings, Analysis, AutoTrading, Settings
+│   ├── Dockerfile
+│   └── nginx.conf
+└── Makefile
 ```
 
 ## 에이전트 구조
@@ -76,16 +79,16 @@ Orchestrator (Analysis 채팅)
 ## 사용 예시
 
 ```
-# Analysis 페이지에서
+# Analysis 페이지 (AI 채팅)
 "포트폴리오 현황 분석해줘"
 "AAPL 현재 주가랑 최근 뉴스 알려줘"
-"AAPL 분할매수 전략 만들어줘"          → Strategy Advisor 호출
+"AAPL 분할매수 전략 만들어줘"   → Strategy Advisor 서브에이전트 호출
 ```
 
 ```
-# Auto Trading 페이지에서
-Enable Auto Trading 토글 ON → Run Executor Now
-→ 활성 전략의 조건을 체크하고 조건 충족 시 Alpaca 주문 실행
+# Auto Trading 페이지
+전략 활성화 → Run Now
+→ 활성 전략의 조건을 체크하고 조건 충족 시 Alpaca Paper Trading 주문 실행
 ```
 
 ## 스키마 변경 (개발자)
