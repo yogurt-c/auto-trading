@@ -11,7 +11,7 @@ import pytest
 
 def test_get_portfolio_empty(auth_client):
     """Holdings 없을 때 → 빈 응답 반환."""
-    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=[]):
+    with patch("app.api.portfolio.db.get_all_holdings", return_value=[]):
         resp = auth_client.get("/api/portfolio")
     assert resp.status_code == 200
     data = resp.json()
@@ -23,7 +23,7 @@ def test_get_portfolio_empty(auth_client):
 def test_get_portfolio_with_holdings(auth_client):
     """Mock holdings + mock prices → P&L 포함 응답."""
     holdings = [{"ticker": "AAPL", "shares": 10.0, "avg_price": 100.0}]
-    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=holdings), \
+    with patch("app.api.portfolio.db.get_all_holdings", return_value=holdings), \
          patch("app.api.portfolio.get_current_prices", return_value={"AAPL": 120.0}):
         resp = auth_client.get("/api/portfolio")
     assert resp.status_code == 200
@@ -47,7 +47,7 @@ def test_get_portfolio_with_holdings(auth_client):
 def test_get_portfolio_failed_tickers(auth_client):
     """가격 조회 실패한 ticker는 failed_tickers에 포함, avg_price로 fallback."""
     holdings = [{"ticker": "UNKNOWN", "shares": 5.0, "avg_price": 50.0}]
-    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=holdings), \
+    with patch("app.api.portfolio.db.get_all_holdings", return_value=holdings), \
          patch("app.api.portfolio.get_current_prices", return_value={}):
         resp = auth_client.get("/api/portfolio")
     assert resp.status_code == 200
@@ -62,14 +62,17 @@ def test_get_portfolio_failed_tickers(auth_client):
 def test_get_portfolio_response_structure(auth_client):
     """응답에 필수 필드가 모두 포함되어 있는지 확인."""
     holdings = [{"ticker": "TSLA", "shares": 3.0, "avg_price": 200.0}]
-    with patch("backend.app.api.portfolio.db.get_all_holdings", return_value=holdings), \
+    with patch("app.api.portfolio.db.get_all_holdings", return_value=holdings), \
          patch("app.api.portfolio.get_current_prices", return_value={"TSLA": 210.0}):
         resp = auth_client.get("/api/portfolio")
     data = resp.json()
     required_keys = {"holdings", "summary", "failed_tickers", "count"}
     assert required_keys <= data.keys()
     h = data["holdings"][0]
-    holding_keys = {"ticker", "shares", "avg_price", "current_price", "market_value", "cost_basis", "pnl", "pnl_pct"}
+    holding_keys = {
+        "ticker", "shares", "avg_price", "current_price",
+        "market_value", "cost_basis", "pnl", "pnl_pct",
+    }
     assert holding_keys <= h.keys()
 
 
@@ -98,7 +101,7 @@ def test_get_transactions(auth_client):
             "executed_at": "2026-03-18T10:30:00+09:00",
         }
     ]
-    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", return_value=mock_orders):
+    with patch("app.api.portfolio.alpaca_client.get_filled_orders", return_value=mock_orders):  # noqa: E501
         resp = auth_client.get("/api/portfolio/transactions")
     assert resp.status_code == 200
     data = resp.json()
@@ -116,7 +119,7 @@ def test_get_transactions(auth_client):
 
 def test_get_transactions_limit_param(auth_client):
     """GET /api/portfolio/transactions?limit=10 → limit 파라미터 수용."""
-    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", return_value=[]) as mock_fn:
+    with patch("app.api.portfolio.alpaca_client.get_filled_orders", return_value=[]) as mock_fn:  # noqa: E501
         resp = auth_client.get("/api/portfolio/transactions?limit=10")
     assert resp.status_code == 200
     mock_fn.assert_called_once_with(limit=10)
@@ -124,14 +127,14 @@ def test_get_transactions_limit_param(auth_client):
 
 def test_get_transactions_alpaca_failure(auth_client):
     """Alpaca 오류 시 503 반환."""
-    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", side_effect=Exception("Alpaca error")):
+    with patch("app.api.portfolio.alpaca_client.get_filled_orders", side_effect=Exception("Alpaca error")):  # noqa: E501
         resp = auth_client.get("/api/portfolio/transactions")
     assert resp.status_code == 503
 
 
 def test_get_transactions_alpaca_key_missing(auth_client):
     """Alpaca API 키 미설정 시 400 반환."""
-    with patch("backend.app.api.portfolio.alpaca_client.get_filled_orders", side_effect=ValueError("API 키 없음")):
+    with patch("app.api.portfolio.alpaca_client.get_filled_orders", side_effect=ValueError("API 키 없음")):  # noqa: E501
         resp = auth_client.get("/api/portfolio/transactions")
     assert resp.status_code == 400
 
@@ -139,7 +142,7 @@ def test_get_transactions_alpaca_key_missing(auth_client):
 def test_sync_holdings_success(auth_client):
     """POST /api/portfolio/sync → Alpaca mock 성공."""
     mock_positions = [{"ticker": "AAPL", "qty": 5.0, "avg_entry_price": 150.0}]
-    with patch("backend.app.api.portfolio.alpaca_client.sync_positions", return_value=mock_positions):
+    with patch("app.api.portfolio.alpaca_client.sync_positions", return_value=mock_positions):  # noqa: E501
         resp = auth_client.post("/api/portfolio/sync")
     assert resp.status_code == 200
     data = resp.json()
@@ -150,6 +153,6 @@ def test_sync_holdings_success(auth_client):
 
 def test_sync_holdings_failure(auth_client):
     """POST /api/portfolio/sync → Alpaca 오류 시 503 반환."""
-    with patch("backend.app.api.portfolio.alpaca_client.sync_positions", side_effect=Exception("Alpaca error")):
+    with patch("app.api.portfolio.alpaca_client.sync_positions", side_effect=Exception("Alpaca error")):  # noqa: E501
         resp = auth_client.post("/api/portfolio/sync")
     assert resp.status_code == 503

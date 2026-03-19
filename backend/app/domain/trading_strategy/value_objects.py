@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 
-class ValidationSeverity(str, Enum):
+class ValidationSeverity(StrEnum):
     WARNING = "warning"
     ERROR = "error"
 

@@ -10,7 +10,6 @@ _KST = ZoneInfo("Asia/Seoul")
 from .value_objects import (
     EvaluationResult,
     MarketData,
-    ValidationSeverity,
     ValidationWarning,
 )
 
@@ -56,32 +55,35 @@ class StrategyValidator:
                 )
             )
 
-        if take_profit_pct is not None and stop_loss_pct is not None:
-            if stop_loss_pct >= take_profit_pct:
-                warnings.append(
-                    ValidationWarning(
-                        message=(
-                            f"stop_loss_pct({stop_loss_pct}) ≥ take_profit_pct({take_profit_pct}): "
-                            "손절가가 익절가보다 크거나 같습니다. 두 조건이 동시에 발동될 수 있습니다."
-                        )
+        if (
+            take_profit_pct is not None
+            and stop_loss_pct is not None
+            and stop_loss_pct >= take_profit_pct
+        ):
+            warnings.append(
+                ValidationWarning(
+                    message=(
+                        f"stop_loss_pct({stop_loss_pct}) ≥ take_profit_pct({take_profit_pct}): "
+                        "손절가가 익절가보다 크거나 같습니다. 두 조건이 동시에 발동될 수 있습니다."
                     )
                 )
+            )
 
         if (
             entry_price_drop_pct is not None
             and take_profit_pct is not None
             and stop_loss_pct is not None
+            and abs(stop_loss_pct) < abs(entry_price_drop_pct)
         ):
-            if abs(stop_loss_pct) < abs(entry_price_drop_pct):
-                warnings.append(
-                    ValidationWarning(
-                        message=(
-                            f"stop_loss_pct({stop_loss_pct})의 절대값이 "
-                            f"entry_price_drop_pct({entry_price_drop_pct})보다 작습니다. "
-                            "진입 조건이 충족되자마자 손절이 발동될 수 있습니다."
-                        )
+            warnings.append(
+                ValidationWarning(
+                    message=(
+                        f"stop_loss_pct({stop_loss_pct})의 절대값이 "
+                        f"entry_price_drop_pct({entry_price_drop_pct})보다 작습니다. "
+                        "진입 조건이 충족되자마자 손절이 발동될 수 있습니다."
                     )
                 )
+            )
 
         if sell_ratio is not None and not (0 < sell_ratio <= 1):
             warnings.append(
@@ -99,16 +101,19 @@ class StrategyValidator:
                 )
             )
 
-        if dca_amount_usd is not None and max_position_usd is not None:
-            if dca_amount_usd > max_position_usd:
-                warnings.append(
-                    ValidationWarning(
-                        message=(
-                            f"dca_amount_usd({dca_amount_usd}) > max_position_usd({max_position_usd}): "
-                            "첫 번째 DCA 매수만으로 포지션 한도를 초과합니다."
-                        )
+        if (
+            dca_amount_usd is not None
+            and max_position_usd is not None
+            and dca_amount_usd > max_position_usd
+        ):
+            warnings.append(
+                ValidationWarning(
+                    message=(
+                        f"dca_amount_usd({dca_amount_usd}) > max_position_usd({max_position_usd}): "
+                        "첫 번째 DCA 매수만으로 포지션 한도를 초과합니다."
                     )
                 )
+            )
 
         if strategy_type == "dca" and dca_amount_usd is None:
             warnings.append(

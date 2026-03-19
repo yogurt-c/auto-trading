@@ -1,10 +1,10 @@
 """인증 인프라 — JWT, 비밀번호 해싱, Secret Key 관리 (DB 기반)."""
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from jose import JWTError, jwt
+from jose import jwt
 
 from .repository import get_setting, save_setting
 
@@ -47,7 +47,7 @@ def get_password_hash() -> str | None:
 def create_access_token(expires_delta: timedelta | None = None) -> str:
     """JWT 액세스 토큰 생성."""
     secret_key = get_or_create_secret_key()
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta if expires_delta else timedelta(days=_TOKEN_EXPIRE_DAYS)
     )
     payload = {"sub": "user", "exp": expire}

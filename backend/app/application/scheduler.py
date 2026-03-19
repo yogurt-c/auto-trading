@@ -6,10 +6,10 @@ import threading
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-from app.infrastructure.timezone import now_kst
-
 from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
+
+from app.infrastructure.timezone import now_kst
 
 _ET = ZoneInfo("America/New_York")
 _MARKET_OPEN = time(9, 30)
@@ -36,6 +36,7 @@ def _job() -> None:
         update_scheduler_run,
         update_strategies_last_checked,
     )
+
     from .agent import run_trade_executor
 
     logger.debug("scheduler job fired")

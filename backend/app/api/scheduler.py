@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
-from app.infrastructure import repository as db
 from app.application.scheduler import ensure_started, get_status
+from app.infrastructure import repository as db
 
 _HIDDEN_KEYS = {"__SECRET_KEY__", "APP_PASSWORD_HASH"}
 _MASKED_KEYS = {"ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ANTHROPIC_API_KEY"}
@@ -48,8 +48,8 @@ def settings_status():
 
     응답: { ok: bool, reason: 'ok'|'missing'|'invalid', message: str }
     """
-    from app.infrastructure.config import get_settings
     from app.infrastructure import alpaca_client
+    from app.infrastructure.config import get_settings
 
     s = get_settings()
     if not s.is_configured:
@@ -64,7 +64,11 @@ def settings_status():
     except Exception as e:
         err = str(e)
         if "unauthorized" in err.lower():
-            return {"ok": False, "reason": "invalid", "message": "Alpaca API 키가 유효하지 않습니다. Settings 페이지에서 확인해 주세요."}
+            return {
+                "ok": False,
+                "reason": "invalid",
+                "message": "Alpaca API 키가 유효하지 않습니다. Settings 페이지에서 확인해 주세요.",
+            }
         return {"ok": False, "reason": "invalid", "message": f"Alpaca 연결 실패: {err}"}
 
 
@@ -92,8 +96,8 @@ def save_setting(key: str, req: SettingValue):
     """설정 저장. API 키 변경 시 클라이언트 리로드."""
     db.save_setting(key, req.value)
     if key in ("ANTHROPIC_API_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_PAPER"):
-        from app.infrastructure.config import reload_settings
         from app.infrastructure.alpaca_client import reset_client
+        from app.infrastructure.config import reload_settings
         reload_settings()
         reset_client()
     return {"success": True}

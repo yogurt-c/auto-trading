@@ -1,23 +1,26 @@
 """Strategies API — CRUD, evaluate, dca-due."""
 
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
-from app.infrastructure import repository as db
 from app.application.tools import (
     check_dca_due as _check_dca_due,
+)
+from app.application.tools import (
     evaluate_strategy as _evaluate_strategy,
+)
+from app.application.tools import (
     save_strategy as _save_strategy,
 )
+from app.infrastructure import repository as db
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/strategies")
-def get_strategies(status: Optional[str] = None):
+def get_strategies(status: str | None = None):
     """전략 목록 반환. status 파라미터로 필터 가능."""
     return db.get_strategies(status)
 
@@ -26,17 +29,17 @@ class StrategyCreate(BaseModel):
     name: str
     strategy_type: str
     summary: str = ""
-    ticker: Optional[str] = None
-    ai_rationale: Optional[str] = None
-    entry_price_drop_pct: Optional[float] = None
-    entry_rsi_below: Optional[float] = None
-    take_profit_pct: Optional[float] = None
-    stop_loss_pct: Optional[float] = None
-    sell_ratio: Optional[float] = None
-    dca_amount_usd: Optional[float] = None
-    dca_frequency_days: Optional[int] = None
-    max_position_usd: Optional[float] = None
-    strategy_id: Optional[int] = None
+    ticker: str | None = None
+    ai_rationale: str | None = None
+    entry_price_drop_pct: float | None = None
+    entry_rsi_below: float | None = None
+    take_profit_pct: float | None = None
+    stop_loss_pct: float | None = None
+    sell_ratio: float | None = None
+    dca_amount_usd: float | None = None
+    dca_frequency_days: int | None = None
+    max_position_usd: float | None = None
+    strategy_id: int | None = None
 
 
 @router.post("/strategies")

@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any, Generator
+from typing import Any
 
 import anthropic
 from loguru import logger
@@ -30,7 +31,7 @@ def _api_create_with_retry(client: anthropic.Anthropic, **kwargs) -> Any:
     for attempt in range(3):
         try:
             return client.messages.create(**kwargs)
-        except anthropic.RateLimitError as e:
+        except anthropic.RateLimitError:
             if attempt == 2:
                 raise
             wait = 2 ** attempt * 15  # 15s, 30s
@@ -54,15 +55,18 @@ HAIKU = "claude-haiku-4-5-20251001"
 
 ORCHESTRATOR_PROMPT = """\
 You are a professional portfolio manager assistant.
-You help users understand their portfolio performance, analyze holdings, and answer market questions.
+You help users understand their portfolio performance, analyze holdings,
+and answer market questions.
 
 You have access to:
 - get_portfolio: retrieve current holdings
 - web_search: look up current prices, news, and market data
 - task: delegate complex sub-tasks to specialized agents
 
-When the user wants to create or manage a trading strategy, delegate to the "strategy-advisor" sub-agent.
-When the user asks to execute trades or check automated trading, delegate to the "trade-executor" sub-agent.
+When the user wants to create or manage a trading strategy,
+delegate to the "strategy-advisor" sub-agent.
+When the user asks to execute trades or check automated trading,
+delegate to the "trade-executor" sub-agent.
 
 Always be concise, data-driven, and mention specific numbers when analyzing the portfolio.
 When citing prices or news, use web_search to get current data.
@@ -81,7 +85,8 @@ Workflow:
 2. Use web_search to research the ticker if needed
 3. Summarize the agreed strategy clearly
 4. Call save_strategy to persist the structured parameters
-5. Confirm the strategy was saved, show the key parameters, and if warnings were returned include them in your response
+5. Confirm the strategy was saved, show the key parameters,
+   and if warnings were returned include them in your response
 
 Always extract these structured fields when possible:
 - entry_price_drop_pct (e.g., buy on -5% dip)
@@ -173,7 +178,7 @@ class SubAgentDef:
 
 SUBAGENTS: dict[str, SubAgentDef] = {
     "strategy-advisor": SubAgentDef(
-        description="Trading strategy specialist. Discusses, structures, and saves strategies to DB.",
+        description="Trading strategy specialist. Discusses, structures, and saves strategies to DB.",  # noqa: E501
         system_prompt=STRATEGY_ADVISOR_PROMPT,
         tools=[*STRATEGY_TOOLS, WEB_SEARCH_TOOL],
         model=SONNET,
@@ -181,7 +186,7 @@ SUBAGENTS: dict[str, SubAgentDef] = {
         max_iterations=6,
     ),
     "trade-executor": SubAgentDef(
-        description="Automated trade executor. Checks strategy conditions and places Alpaca orders.",
+        description="Automated trade executor. Checks strategy conditions and places Alpaca orders.",  # noqa: E501
         system_prompt=TRADE_EXECUTOR_PROMPT,
         tools=[*TRADE_TOOLS, WEB_SEARCH_TOOL],
         model=HAIKU,       # Haiku: rule-based execution, no complex reasoning needed
@@ -229,7 +234,9 @@ def _build_client() -> anthropic.Anthropic:
     from app.infrastructure.config import get_settings
     api_key = get_settings().anthropic_api_key
     if not api_key:
-        raise ValueError("Anthropic API 키가 설정되지 않았습니다. Settings 페이지에서 입력해 주세요.")
+        raise ValueError(
+            "Anthropic API 키가 설정되지 않았습니다. Settings 페이지에서 입력해 주세요."
+        )
     return anthropic.Anthropic(api_key=api_key)
 
 
@@ -345,7 +352,7 @@ def _run_subagent(agent_name: str, task: str) -> dict:
 
         text_parts: list[str] = []
 
-        for iteration in range(defn.max_iterations):
+        for _iteration in range(defn.max_iterations):
             response = _api_create_with_retry(
                 client,
                 model=defn.model,
@@ -423,7 +430,7 @@ def run_trade_executor() -> str:
     logger.info("run_trade_executor started")
     result = _run_subagent(
         "trade-executor",
-        "Review all active strategies, check current market conditions, and execute any triggered orders.",
+        "Review all active strategies, check current market conditions, and execute any triggered orders.",  # noqa: E501
     )
     logger.info("run_trade_executor completed")
     return result.get("result", "Trade executor completed.")

@@ -6,7 +6,6 @@ Each test cleans up its own data to avoid interference.
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -183,7 +182,8 @@ def test_dca_due_no_frequency(auth_client):
         assert resp.status_code == 200
         dca_data = resp.json()
         assert dca_data["is_due"] is False
-        assert isinstance(dca_data["reason"], str) and len(dca_data["reason"]) > 0
+        assert isinstance(dca_data["reason"], str)
+        assert len(dca_data["reason"]) > 0
     finally:
         _delete_strategy(auth_client, strategy_id)
 

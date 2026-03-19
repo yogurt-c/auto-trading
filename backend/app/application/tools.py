@@ -6,17 +6,20 @@ Tool schemas (for Anthropic tool_use) are also defined here.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from loguru import logger
 
-from app.infrastructure import repository as db
+from app.domain.portfolio.services import PortfolioValuationService
+from app.domain.trading_strategy.services import (
+    DcaScheduleChecker,
+    StrategyEvaluator,
+    StrategyValidator,
+)
+from app.domain.trading_strategy.value_objects import MarketData
 from app.infrastructure import alpaca_client
 from app.infrastructure import market as market_data
-from app.domain.trading_strategy.services import DcaScheduleChecker, StrategyEvaluator, StrategyValidator
-from app.domain.trading_strategy.value_objects import MarketData
-from app.domain.portfolio.services import PortfolioValuationService
+from app.infrastructure import repository as db
 
 _strategy_validator = StrategyValidator()
 _strategy_evaluator = StrategyEvaluator()
@@ -305,7 +308,7 @@ def place_order(
         holdings_synced = _sync_from_alpaca()
         logger.info(f"place_order success: {side} {qty} {ticker}, sync={holdings_synced}")
 
-        return {"success": True, "order": order, "log_id": log["id"], "holdings_synced": holdings_synced}
+        return {"success": True, "order": order, "log_id": log["id"], "holdings_synced": holdings_synced}  # noqa: E501
     except Exception as e:
         logger.error(f"place_order failed: {ticker} {side} — {e}")
         db.add_trade_log(
@@ -358,12 +361,15 @@ def dispatch_tool(name: str, inputs: dict) -> Any:
 PORTFOLIO_TOOLS = [
     {
         "name": "get_portfolio",
-        "description": "Return all holdings in the portfolio with ticker, shares, avg_price, created_at.",
+        "description": "Return all holdings in the portfolio with ticker, shares, avg_price, created_at.",  # noqa: E501
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "sync_holdings",
-        "description": "Sync holdings table from Alpaca positions (single source of truth). Call this to get the latest holdings before analysis.",
+        "description": (
+            "Sync holdings table from Alpaca positions (single source of truth). "
+            "Call this to get the latest holdings before analysis."
+        ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
 ]
@@ -398,18 +404,18 @@ STRATEGY_TOOLS = [
                     "type": "string",
                     "enum": ["dca", "momentum", "value", "stop_loss", "take_profit", "custom"],
                 },
-                "summary": {"type": "string", "description": "Summary of the strategy agreed with user"},
-                "ticker": {"type": "string", "description": "Target ticker (null = whole portfolio)"},
-                "ai_rationale": {"type": "string", "description": "AI's reasoning for this strategy"},
-                "entry_price_drop_pct": {"type": "number", "description": "Buy trigger: % drop from current price (negative, e.g. -5.0)"},
-                "entry_rsi_below": {"type": "number", "description": "Buy trigger: RSI threshold (e.g. 30)"},
-                "take_profit_pct": {"type": "number", "description": "Sell trigger: target profit % (e.g. 20.0)"},
-                "stop_loss_pct": {"type": "number", "description": "Sell trigger: stop loss % (e.g. -10.0)"},
-                "sell_ratio": {"type": "number", "description": "Fraction of position to sell (0.5 = half)"},
+                "summary": {"type": "string", "description": "Summary of the strategy agreed with user"},  # noqa: E501
+                "ticker": {"type": "string", "description": "Target ticker (null = whole portfolio)"},  # noqa: E501
+                "ai_rationale": {"type": "string", "description": "AI's reasoning for this strategy"},  # noqa: E501
+                "entry_price_drop_pct": {"type": "number", "description": "Buy trigger: % drop from current price (negative, e.g. -5.0)"},  # noqa: E501
+                "entry_rsi_below": {"type": "number", "description": "Buy trigger: RSI threshold (e.g. 30)"},  # noqa: E501
+                "take_profit_pct": {"type": "number", "description": "Sell trigger: target profit % (e.g. 20.0)"},  # noqa: E501
+                "stop_loss_pct": {"type": "number", "description": "Sell trigger: stop loss % (e.g. -10.0)"},  # noqa: E501
+                "sell_ratio": {"type": "number", "description": "Fraction of position to sell (0.5 = half)"},  # noqa: E501
                 "dca_amount_usd": {"type": "number", "description": "USD amount per DCA purchase"},
                 "dca_frequency_days": {"type": "integer", "description": "DCA interval in days"},
-                "max_position_usd": {"type": "number", "description": "Maximum total investment in USD"},
-                "strategy_id": {"type": "integer", "description": "Existing strategy ID to update (omit to create new)"},
+                "max_position_usd": {"type": "number", "description": "Maximum total investment in USD"},  # noqa: E501
+                "strategy_id": {"type": "integer", "description": "Existing strategy ID to update (omit to create new)"},  # noqa: E501
             },
             "required": ["name", "strategy_type"],
         },
@@ -452,7 +458,7 @@ TRADE_TOOLS = [
     },
     {
         "name": "get_alpaca_account",
-        "description": "Return Alpaca paper trading account balance, buying power, and open positions.",
+        "description": "Return Alpaca paper trading account balance, buying power, and open positions.",  # noqa: E501
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -465,10 +471,10 @@ TRADE_TOOLS = [
                 "side": {"type": "string", "enum": ["buy", "sell"]},
                 "qty": {"type": "number", "description": "Number of shares"},
                 "order_type": {"type": "string", "enum": ["market", "limit"], "default": "market"},
-                "limit_price": {"type": "number", "description": "Limit price (only for limit orders)"},
-                "strategy_id": {"type": "integer", "description": "Associated strategy ID for logging"},
-                "ai_reasoning": {"type": "string", "description": "AI's reason for placing this order"},
-                "max_position_usd": {"type": "number", "description": "Position size cap in USD from the strategy. If set, the order is rejected before submission if it would exceed this limit."},
+                "limit_price": {"type": "number", "description": "Limit price (only for limit orders)"},  # noqa: E501
+                "strategy_id": {"type": "integer", "description": "Associated strategy ID for logging"},  # noqa: E501
+                "ai_reasoning": {"type": "string", "description": "AI's reason for placing this order"},  # noqa: E501
+                "max_position_usd": {"type": "number", "description": "Position size cap in USD from the strategy. If set, the order is rejected before submission if it would exceed this limit."},  # noqa: E501
             },
             "required": ["ticker", "side", "qty"],
         },
@@ -492,7 +498,7 @@ TRADE_TOOLS = [
         "description": (
             "Evaluate a strategy's entry/exit conditions using real-time price data. "
             "Returns entry_triggered, exit_triggered, and per-condition details. "
-            "Always call this for each active strategy instead of using web_search to check prices manually."
+            "Always call this for each active strategy instead of using web_search to check prices manually."  # noqa: E501
         ),
         "input_schema": {
             "type": "object",

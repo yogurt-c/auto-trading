@@ -1,6 +1,6 @@
 """Unit tests for DcaScheduleChecker."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -33,7 +33,7 @@ def test_never_triggered(checker):
 
 def test_due(checker):
     """days_since(10) >= freq(7) → is_due=True."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last = now - timedelta(days=10)
     result = checker.is_due(
         {"dca_frequency_days": 7, "last_triggered_at": last},
@@ -45,7 +45,7 @@ def test_due(checker):
 
 def test_not_due(checker):
     """days_since(3) < freq(7) → is_due=False."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last = now - timedelta(days=3)
     result = checker.is_due(
         {"dca_frequency_days": 7, "last_triggered_at": last},
@@ -57,7 +57,7 @@ def test_not_due(checker):
 
 def test_string_last_triggered(checker):
     """last_triggered_at이 ISO 문자열일 때 파싱 후 정상 동작."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last_str = (now - timedelta(days=10)).isoformat()
     result = checker.is_due(
         {"dca_frequency_days": 7, "last_triggered_at": last_str},
@@ -68,7 +68,7 @@ def test_string_last_triggered(checker):
 
 def test_naive_datetime(checker):
     """timezone-naive last_triggered_at → UTC로 처리."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last_naive = (now - timedelta(days=10)).replace(tzinfo=None)
     result = checker.is_due(
         {"dca_frequency_days": 7, "last_triggered_at": last_naive},
@@ -79,7 +79,7 @@ def test_naive_datetime(checker):
 
 def test_exactly_on_due_date(checker):
     """days_since == freq → is_due=True (경계값)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last = now - timedelta(days=7)
     result = checker.is_due(
         {"dca_frequency_days": 7, "last_triggered_at": last},

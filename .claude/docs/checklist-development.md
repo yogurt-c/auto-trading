@@ -10,8 +10,15 @@
 - [ ] 신규 기능 추가 시 테스트 코드 추가 (`backend/tests/unit/` 또는 `integration/`)
 
 ## 테스트 실행
-- [ ] `pytest -c backend/pytest.ini` 전체 통과
+- [ ] `make test` 전체 통과
 - [ ] `cd frontend && npm run build` TypeScript 오류 없음
+
+## DB 마이그레이션
+- [ ] `backend/app/infrastructure/models.py` 변경 시 alembic revision 파일 생성했는가
+
+## 코드 품질
+- [ ] `make fmt` 실행
+- [ ] `make lint` 통과
 
 ## 프론트엔드 ↔ 백엔드 타입 일치
 - [ ] 프론트 페이지 수정 시 백엔드 `response_model` 필드와 `frontend/src/api/types.ts` 인터페이스 일치 확인

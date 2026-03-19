@@ -3,10 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_current_user
-from app.infrastructure import repository as db
-from app.infrastructure import alpaca_client
-from app.infrastructure.market import get_current_prices
 from app.domain.portfolio.services import PortfolioValuationService
+from app.infrastructure import alpaca_client
+from app.infrastructure import repository as db
+from app.infrastructure.market import get_current_prices
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 _valuation_service = PortfolioValuationService()
@@ -63,7 +63,10 @@ def sync_holdings():
     except Exception as e:
         err_str = str(e)
         if "unauthorized" in err_str.lower():
-            raise HTTPException(status_code=401, detail="Alpaca API 인증 실패. Settings 페이지에서 API 키를 확인해 주세요.")
+            raise HTTPException(
+                status_code=401,
+                detail="Alpaca API 인증 실패. Settings 페이지에서 API 키를 확인해 주세요.",
+            )
         raise HTTPException(status_code=503, detail=f"Alpaca sync 실패: {err_str}")
 
 
@@ -82,5 +85,5 @@ def get_transactions(limit: int = Query(50, ge=1, le=500)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Alpaca 주문 이력 조회 실패: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"Alpaca 주문 이력 조회 실패: {e!s}")
     return {"transactions": txns, "count": len(txns)}

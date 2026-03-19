@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
+
 load_dotenv(".env")
 
 from fastapi import FastAPI, Request, Response
@@ -11,11 +12,11 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app.infrastructure.database import init_db
-from app.infrastructure.auth import get_or_create_secret_key
-from app.application.scheduler import ensure_started
-from app.api import portfolio, strategies, trading, agent, scheduler
+from app.api import agent, portfolio, scheduler, strategies, trading
 from app.api.auth import router as auth_router
+from app.application.scheduler import ensure_started
+from app.infrastructure.auth import get_or_create_secret_key
+from app.infrastructure.database import init_db
 
 
 @asynccontextmanager

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -40,7 +39,9 @@ class Transaction(DictMixin, Base):
     shares: Mapped[float] = mapped_column(Float, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     total: Mapped[float] = mapped_column(Float, nullable=False)
-    strategy_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("strategies.id"), nullable=True)
+    strategy_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("strategies.id"), nullable=True
+    )
     executed_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
 
 
@@ -49,21 +50,21 @@ class Strategy(DictMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    ticker: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ticker: Mapped[str | None] = mapped_column(String, nullable=True)
     strategy_type: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    ai_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    entry_price_drop_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    entry_rsi_below: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    take_profit_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    stop_loss_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    sell_ratio: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    dca_amount_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    dca_frequency_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    max_position_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ai_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entry_price_drop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_rsi_below: Mapped[float | None] = mapped_column(Float, nullable=True)
+    take_profit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sell_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dca_amount_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dca_frequency_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_position_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String, default="active")
-    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    last_triggered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst, onupdate=now_kst)
 
@@ -74,18 +75,20 @@ class TradeLog(DictMixin, Base):
     __tablename__ = "trade_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    strategy_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("strategies.id"), nullable=True)
+    strategy_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("strategies.id"), nullable=True
+    )
     ticker: Mapped[str] = mapped_column(String, nullable=False)
     side: Mapped[str] = mapped_column(String, nullable=False)  # 'buy' | 'sell'
     qty: Mapped[float] = mapped_column(Float, nullable=False)
     order_type: Mapped[str] = mapped_column(String, nullable=False)  # 'market' | 'limit'
-    limit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
-    alpaca_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    ai_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    alpaca_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    ai_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     executed_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
 
-    strategy: Mapped[Optional[Strategy]] = relationship("Strategy", back_populates="trade_logs")
+    strategy: Mapped[Strategy | None] = relationship("Strategy", back_populates="trade_logs")
 
 
 class Setting(DictMixin, Base):
@@ -101,9 +104,9 @@ class SchedulerRun(DictMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)  # 'running' | 'success' | 'failed'
     strategies_checked: Mapped[int] = mapped_column(Integer, default=0)
     orders_placed: Mapped[int] = mapped_column(Integer, default=0)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)

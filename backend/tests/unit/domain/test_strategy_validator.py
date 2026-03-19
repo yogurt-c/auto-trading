@@ -12,17 +12,17 @@ def validator():
 
 def _validate(validator, **kwargs):
     """Helper: call validate() with defaults for unspecified params."""
-    defaults = dict(
-        strategy_type="value",
-        entry_price_drop_pct=None,
-        entry_rsi_below=None,
-        take_profit_pct=None,
-        stop_loss_pct=None,
-        sell_ratio=None,
-        dca_amount_usd=None,
-        dca_frequency_days=None,
-        max_position_usd=None,
-    )
+    defaults = {
+        "strategy_type": "value",
+        "entry_price_drop_pct": None,
+        "entry_rsi_below": None,
+        "take_profit_pct": None,
+        "stop_loss_pct": None,
+        "sell_ratio": None,
+        "dca_amount_usd": None,
+        "dca_frequency_days": None,
+        "max_position_usd": None,
+    }
     defaults.update(kwargs)
     return validator.validate(**defaults)
 

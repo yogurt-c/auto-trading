@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import delete, func, select, update
 
 from .database import get_session
 from .models import Holding, SchedulerRun, Setting, Strategy, TradeLog, Transaction
 from .timezone import now_kst
-
 
 # ---------------------------------------------------------------------------
 # Holdings
@@ -263,7 +260,9 @@ def update_strategy_last_triggered(strategy_id: int) -> None:
 # Scheduler runs
 # ---------------------------------------------------------------------------
 
-def add_scheduler_run(status: str = "running", finished_at=None, summary: str | None = None) -> dict:
+def add_scheduler_run(
+    status: str = "running", finished_at=None, summary: str | None = None
+) -> dict:
     with get_session() as s:
         run = SchedulerRun(
             status=status,

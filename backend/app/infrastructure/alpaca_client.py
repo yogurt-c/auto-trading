@@ -16,7 +16,9 @@ def _get_client():
 
         s = get_settings()
         if not s.alpaca_api_key or not s.alpaca_secret_key:
-            raise ValueError("Alpaca API 키가 설정되지 않았습니다. Settings 페이지에서 입력해 주세요.")
+            raise ValueError(
+                "Alpaca API 키가 설정되지 않았습니다. Settings 페이지에서 입력해 주세요."
+            )
         _client = TradingClient(s.alpaca_api_key, s.alpaca_secret_key, paper=s.alpaca_paper)
     return _client
 
@@ -99,6 +101,7 @@ def place_order(
     limit_price: float | None = None,
 ) -> dict:
     import time
+
     from alpaca.trading.enums import OrderSide, TimeInForce
     from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 

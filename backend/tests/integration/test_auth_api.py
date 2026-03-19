@@ -1,12 +1,11 @@
 """Integration tests for Auth API endpoints."""
 
 import bcrypt as _bcrypt
-import pytest
+from sqlalchemy import delete as sa_delete
 
 from app.infrastructure import repository as db
 from app.infrastructure.database import get_session
 from app.infrastructure.models import Setting as SettingModel
-from sqlalchemy import delete as sa_delete
 
 _HASH_KEY = "APP_PASSWORD_HASH"
 

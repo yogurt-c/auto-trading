@@ -7,7 +7,7 @@ SessionLocal are module-level singletons created at import time.
 import os
 
 # Set test DB path before any core imports
-os.environ.setdefault("DB_PATH", "backend/tests/data/test.db")
+os.environ.setdefault("DB_PATH", "tests/data/test.db")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -41,8 +41,9 @@ def auth_client(_init_db):
     - teardown에서 APP_PASSWORD_HASH DB row 삭제
     """
     import bcrypt as _bcrypt
-    from app.main import app
+
     from app.infrastructure import repository as db
+    from app.main import app
 
     test_password = "test-password-123"
     hashed = _bcrypt.hashpw(test_password.encode(), _bcrypt.gensalt()).decode()
@@ -61,9 +62,10 @@ def auth_client(_init_db):
     yield client
 
     # teardown: 테스트 DB에서 비밀번호 해시 제거
+    from sqlalchemy import delete as sa_delete
+
     from app.infrastructure.database import get_session
     from app.infrastructure.models import Setting as SettingModel
-    from sqlalchemy import delete as sa_delete
 
     with get_session() as s:
         s.execute(sa_delete(SettingModel).where(SettingModel.key == "APP_PASSWORD_HASH"))
@@ -98,10 +100,11 @@ def db_holding(_init_db):
 @pytest.fixture
 def db_trade_log(_init_db):
     """TradeLog를 real DB에 생성하고 teardown에서 제거."""
+    from sqlalchemy import delete as sa_delete
+
     from app.infrastructure import repository as db
     from app.infrastructure.database import get_session
     from app.infrastructure.models import TradeLog as TradeLogModel
-    from sqlalchemy import delete as sa_delete
 
     log = db.add_trade_log(
         ticker="TESTLOG",
@@ -119,10 +122,11 @@ def db_trade_log(_init_db):
 @pytest.fixture
 def db_scheduler_run(_init_db):
     """SchedulerRun을 real DB에 생성하고 teardown에서 제거."""
+    from sqlalchemy import delete as sa_delete
+
     from app.infrastructure import repository as db
     from app.infrastructure.database import get_session
     from app.infrastructure.models import SchedulerRun as SchedulerRunModel
-    from sqlalchemy import delete as sa_delete
 
     run = db.add_scheduler_run(status="completed", summary="fixture run")
     db.update_scheduler_run(run["id"], strategies_checked=2, orders_placed=1)

@@ -1,14 +1,13 @@
 """Trading API — Alpaca account, orders, logs."""
 
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
+from app.application.tools import place_order as _place_order
 from app.infrastructure import alpaca_client
 from app.infrastructure import repository as db
-from app.application.tools import place_order as _place_order
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -37,10 +36,10 @@ class OrderRequest(BaseModel):
     side: str
     qty: float
     order_type: str = "market"
-    limit_price: Optional[float] = None
-    strategy_id: Optional[int] = None
-    ai_reasoning: Optional[str] = None
-    max_position_usd: Optional[float] = None
+    limit_price: float | None = None
+    strategy_id: int | None = None
+    ai_reasoning: str | None = None
+    max_position_usd: float | None = None
 
 
 @router.post("/trading/orders")

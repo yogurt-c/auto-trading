@@ -8,8 +8,6 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from .models import Base
-
 
 def _get_db_url() -> str:
     import os
@@ -45,8 +43,9 @@ def get_session() -> Session:
 
 def init_db() -> None:
     """Run Alembic migrations to bring DB schema up to date."""
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     db_url = _get_db_url()
     alembic_ini = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
