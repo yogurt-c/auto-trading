@@ -11,5 +11,6 @@ dist/
 build/
 .claude/settings.local.json
 .pytest_cache
+.ruff_cache
 .env
 .env.production
