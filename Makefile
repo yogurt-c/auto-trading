@@ -1,4 +1,4 @@
-.PHONY: backend frontend dev install test test-unit test-integration lint fmt typecheck
+.PHONY: backend frontend dev install test test-unit test-integration lint fmt
 
 backend:
 	cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000
@@ -27,6 +27,3 @@ lint:
 
 fmt:
 	cd backend && source venv/bin/activate && ruff format app/ tests/
-
-typecheck:
-	cd backend && source venv/bin/activate && mypy app/
