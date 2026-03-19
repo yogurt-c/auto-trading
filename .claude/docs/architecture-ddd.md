@@ -161,6 +161,14 @@ sequenceDiagram
 
 ```mermaid
 graph LR
+    subgraph auth["/api/auth (JWT 인증)"]
+        AU1["GET /api/auth/status (공개)"]
+        AU2["POST /api/auth/setup (공개, 최초 1회)"]
+        AU3["POST /api/auth/login (공개, rate-limited)"]
+        AU4["POST /api/auth/change-password (인증 필요)"]
+        AU5["GET /api/auth/me (인증 필요)"]
+    end
+
     subgraph portfolio["/api/portfolio"]
         P1["GET /api/portfolio<br/>holdings + P&L 스냅샷"]
         P2["POST /api/portfolio/sync<br/>Alpaca 포지션 동기화"]

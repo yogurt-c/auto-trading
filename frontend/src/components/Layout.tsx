@@ -1,7 +1,8 @@
 import styled from '@emotion/styled'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { settingsApi } from '../api/endpoints'
+import { useAuth } from '../contexts/AuthContext'
 import { colors, spacing, fontSize } from '../theme'
 
 const navItems = [
@@ -14,6 +15,8 @@ const navItems = [
 
 export default function Layout() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { logout } = useAuth()
   const { data: status } = useQuery({
     queryKey: ['settingsStatus'],
     queryFn: settingsApi.status,
@@ -21,6 +24,11 @@ export default function Layout() {
   })
 
   const showBanner = status && !status.ok && location.pathname !== '/settings'
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <Shell>
@@ -37,6 +45,9 @@ export default function Layout() {
             </NavItem>
           ))}
         </Nav>
+        <SidebarFooter>
+          <LogoutBtn onClick={handleLogout}>로그아웃</LogoutBtn>
+        </SidebarFooter>
       </Sidebar>
       <MainArea>
         {showBanner && (
@@ -94,6 +105,30 @@ const Nav = styled.nav`
   flex-direction: column;
   gap: 2px;
   padding: 0 ${spacing.sm};
+  flex: 1;
+`
+
+const SidebarFooter = styled.div`
+  padding: ${spacing.md} ${spacing.sm};
+  border-top: 1px solid ${colors.border};
+`
+
+const LogoutBtn = styled.button`
+  width: 100%;
+  background: transparent;
+  border: 1px solid ${colors.border};
+  border-radius: 8px;
+  padding: ${spacing.sm} ${spacing.md};
+  font-size: ${fontSize.sm};
+  color: ${colors.textMuted};
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
+
+  &:hover {
+    background: ${colors.bgHover};
+    color: ${colors.text};
+  }
 `
 
 const NavItem = styled(NavLink)`

@@ -33,6 +33,42 @@ def app_client(_init_db):
     return TestClient(app)
 
 
+@pytest.fixture(scope="session")
+def auth_client(_init_db):
+    """TestClient with JWT auth header (보호된 엔드포인트 테스트용).
+
+    - bcrypt 해시를 DB에 직접 저장하여 /api/auth/login으로 토큰 획득
+    - teardown에서 APP_PASSWORD_HASH DB row 삭제
+    """
+    import bcrypt as _bcrypt
+    from app.main import app
+    from app.infrastructure import repository as db
+
+    test_password = "test-password-123"
+    hashed = _bcrypt.hashpw(test_password.encode(), _bcrypt.gensalt()).decode()
+
+    # DB에 테스트 비밀번호 해시 설정
+    db.save_setting("APP_PASSWORD_HASH", hashed)
+
+    client = TestClient(app)
+    resp = client.post("/api/auth/login", json={"password": test_password})
+    assert resp.status_code == 200, f"auth_client login failed: {resp.text}"
+    token = resp.json()["access_token"]
+
+    # Authorization 헤더를 포함한 클라이언트 반환 (headers 속성 덮어쓰기)
+    client.headers.update({"Authorization": f"Bearer {token}"})
+
+    yield client
+
+    # teardown: 테스트 DB에서 비밀번호 해시 제거
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import Setting as SettingModel
+    from sqlalchemy import delete as sa_delete
+
+    with get_session() as s:
+        s.execute(sa_delete(SettingModel).where(SettingModel.key == "APP_PASSWORD_HASH"))
+
+
 @pytest.fixture
 def sample_holding():
     return {"ticker": "AAPL", "shares": 10.0, "avg_price": 150.0}

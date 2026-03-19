@@ -12,6 +12,8 @@ backend/
 │   ├── main.py               # FastAPI app + lifespan(init_db, ensure_started) + CORS
 │   ├── api/                  # Presentation Layer — FastAPI 라우터
 │   │   ├── __init__.py
+│   │   ├── auth.py           # 인증 엔드포인트 (status/setup/login/change-password/me)
+│   │   ├── deps.py           # FastAPI 공통 의존성 (get_current_user)
 │   │   ├── portfolio.py      # GET /api/portfolio (P&L), sync, holdings, transactions
 │   │   ├── strategies.py     # CRUD + evaluate + dca-due
 │   │   ├── trading.py        # Alpaca account, orders, logs
@@ -25,6 +27,7 @@ backend/
 │   ├── infrastructure/       # Infrastructure Layer — 기술적 구현 (DB, 외부 API)
 │   │   ├── __init__.py
 │   │   ├── alpaca_client.py  # Alpaca Paper Trading API 래퍼
+│   │   ├── auth.py           # JWT 생성·검증, bcrypt 해싱, Secret Key 관리 (DB 기반)
 │   │   ├── config.py         # Settings dataclass (SQLAlchemy 기반, 캐시)
 │   │   ├── database.py       # SQLite init (Alembic), get_session() 컨텍스트매니저
 │   │   ├── market.py         # get_current_prices() — Yahoo Finance (yfinance)
@@ -64,6 +67,8 @@ backend/
 
 | 파일 | 역할 | 주요 의존성 |
 |------|------|------------|
+| `auth.py` | 인증 REST 엔드포인트 (공개+보호) | `app.infrastructure.auth`, `app.api.deps`, slowapi rate limiter |
+| `deps.py` | `get_current_user` FastAPI dependency | `app.infrastructure.auth` |
 | `portfolio.py` | 포트폴리오 REST 엔드포인트 | `app.infrastructure.repository`, `app.infrastructure.market`, `app.domain.portfolio.services` |
 | `strategies.py` | 전략 CRUD + 평가 엔드포인트 | `app.infrastructure.repository`, `app.application.tools` |
 | `trading.py` | Alpaca 계좌·주문·로그 엔드포인트 | `app.infrastructure.alpaca_client`, `app.infrastructure.repository`, `app.application.tools` |
@@ -83,6 +88,7 @@ backend/
 | 파일 | 역할 | 비고 |
 |------|------|------|
 | `alpaca_client.py` | Alpaca TradingClient 싱글톤 래퍼 | `reset_client()` — 설정 변경 시 호출 |
+| `auth.py` | JWT 생성·검증, bcrypt 비밀번호 해싱 | `__SECRET_KEY__`·`APP_PASSWORD_HASH`를 Settings 테이블에 저장 |
 | `config.py` | Settings 캐시 (SQLAlchemy 기반) | `reload_settings()` — 설정 저장 후 호출 |
 | `database.py` | SQLite 초기화 (Alembic auto-migrate) | `get_session()` — context manager |
 | `market.py` | `get_current_prices(tickers)` | yfinance, 실패 티커는 결과에서 제외 |

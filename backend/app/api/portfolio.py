@@ -1,13 +1,14 @@
 """Portfolio API — holdings, sync, transactions."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.deps import get_current_user
 from app.infrastructure import repository as db
 from app.infrastructure import alpaca_client
 from app.infrastructure.market import get_current_prices
 from app.domain.portfolio.services import PortfolioValuationService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 _valuation_service = PortfolioValuationService()
 
 

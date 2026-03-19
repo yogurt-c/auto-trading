@@ -2,13 +2,14 @@
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.api.deps import get_current_user
 from app.application.agent import run_trade_executor, stream_orchestrator
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class ChatRequest(BaseModel):

@@ -5,4 +5,28 @@ const api = axios.create({
   timeout: 30_000,
 })
 
+// Request: Authorization 헤더 자동 삽입
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  }
+  return config
+})
+
+// Response: 401 수신 시 토큰 제거 + /login 리다이렉트
+api.interceptors.response.use(
+  res => res,
+  err => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('app_configured')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(err)
+  }
+)
+
 export default api

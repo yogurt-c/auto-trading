@@ -187,6 +187,31 @@ export const schedulerApi = {
   trigger: () => api.post<{ message: string }>('/scheduler/trigger').then(r => r.data),
 }
 
+// ── Auth ───────────────────────────────────────────────────────────────────
+
+export const authApi = {
+  status: () =>
+    api.get<{ configured: boolean }>('/auth/status').then(r => r.data),
+
+  setup: (password: string) =>
+    api
+      .post<{ access_token: string; token_type: string }>('/auth/setup', { password })
+      .then(r => r.data),
+
+  login: (password: string) =>
+    api
+      .post<{ access_token: string; token_type: string }>('/auth/login', { password })
+      .then(r => r.data),
+
+  changePassword: (current_password: string, new_password: string) =>
+    api
+      .post<{ success: boolean }>('/auth/change-password', { current_password, new_password })
+      .then(r => r.data),
+
+  me: () =>
+    api.get<{ sub: string }>('/auth/me').then(r => r.data),
+}
+
 // ── Settings ───────────────────────────────────────────────────────────────
 
 export const settingsApi = {

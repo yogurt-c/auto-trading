@@ -2,9 +2,10 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.api.deps import get_current_user
 from app.infrastructure import repository as db
 from app.application.tools import (
     check_dca_due as _check_dca_due,
@@ -12,7 +13,7 @@ from app.application.tools import (
     save_strategy as _save_strategy,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/strategies")

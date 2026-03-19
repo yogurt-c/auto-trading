@@ -2,7 +2,7 @@ import { useState } from 'react'
 import styled from '@emotion/styled'
 import * as Switch from '@radix-ui/react-switch'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { settingsApi } from '../api/endpoints'
+import { settingsApi, authApi } from '../api/endpoints'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
 
 const SETTING_FIELDS = [
@@ -20,6 +20,43 @@ export default function Settings() {
 
   const [form, setForm] = useState<Record<string, string>>({})
   const [toast, setToast] = useState<string | null>(null)
+
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
+  const [pwError, setPwError] = useState<string | null>(null)
+
+  const pwMutation = useMutation({
+    mutationFn: () => authApi.changePassword(pwForm.current, pwForm.next),
+    onSuccess: () => {
+      setPwForm({ current: '', next: '', confirm: '' })
+      setPwError(null)
+      setToast('비밀번호가 변경되었습니다')
+      setTimeout(() => setToast(null), 2500)
+    },
+    onError: (e: any) => {
+      setPwError(e?.response?.data?.detail ?? '비밀번호 변경에 실패했습니다')
+    },
+  })
+
+  const handleChangePassword = () => {
+    setPwError(null)
+    if (!pwForm.current.trim()) {
+      setPwError('현재 비밀번호를 입력해 주세요')
+      return
+    }
+    if (!pwForm.next.trim()) {
+      setPwError('새 비밀번호를 입력해 주세요')
+      return
+    }
+    if (pwForm.next.length < 8) {
+      setPwError('새 비밀번호는 8자 이상이어야 합니다')
+      return
+    }
+    if (pwForm.next !== pwForm.confirm) {
+      setPwError('새 비밀번호가 일치하지 않습니다')
+      return
+    }
+    pwMutation.mutate()
+  }
 
   const isPaper = settings?.['ALPACA_PAPER'] !== 'false'
 
@@ -112,6 +149,48 @@ export default function Settings() {
             disabled={mutation.isPending || Object.keys(form).every(k => !form[k]?.trim())}
           >
             {mutation.isPending ? '저장 중...' : '저장'}
+          </SaveBtn>
+        </SaveRow>
+      </Card>
+
+      <Card style={{ marginTop: spacing.xl }}>
+        <Section>
+          <SectionTitle>보안</SectionTitle>
+          <Field>
+            <Label>현재 비밀번호</Label>
+            <Input
+              type="password"
+              placeholder="현재 비밀번호"
+              value={pwForm.current}
+              onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))}
+            />
+          </Field>
+          <Field>
+            <Label>새 비밀번호 (8자 이상)</Label>
+            <Input
+              type="password"
+              placeholder="새 비밀번호"
+              value={pwForm.next}
+              onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))}
+            />
+          </Field>
+          <Field>
+            <Label>새 비밀번호 확인</Label>
+            <Input
+              type="password"
+              placeholder="새 비밀번호 재입력"
+              value={pwForm.confirm}
+              onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))}
+            />
+          </Field>
+          {pwError && <PwError>{pwError}</PwError>}
+        </Section>
+        <SaveRow>
+          <SaveBtn
+            onClick={handleChangePassword}
+            disabled={pwMutation.isPending}
+          >
+            {pwMutation.isPending ? '변경 중...' : '비밀번호 변경'}
           </SaveBtn>
         </SaveRow>
       </Card>
@@ -277,6 +356,16 @@ const SwitchThumb = styled(Switch.Thumb)`
   &[data-state='checked'] {
     transform: translateX(20px);
   }
+`
+
+const PwError = styled.div`
+  margin-top: ${spacing.sm};
+  font-size: ${fontSize.sm};
+  color: ${colors.danger};
+  padding: ${spacing.sm} ${spacing.md};
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid ${colors.danger};
+  border-radius: ${radius.sm};
 `
 
 const LiveWarning = styled.div`

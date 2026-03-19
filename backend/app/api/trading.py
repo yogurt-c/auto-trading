@@ -2,14 +2,15 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.api.deps import get_current_user
 from app.infrastructure import alpaca_client
 from app.infrastructure import repository as db
 from app.application.tools import place_order as _place_order
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/trading/account")

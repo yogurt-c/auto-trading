@@ -1,12 +1,16 @@
 """Scheduler + Settings API."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from app.api.deps import get_current_user
 from app.infrastructure import repository as db
 from app.application.scheduler import ensure_started, get_status
 
-router = APIRouter()
+_HIDDEN_KEYS = {"__SECRET_KEY__", "APP_PASSWORD_HASH"}
+_MASKED_KEYS = {"ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ANTHROPIC_API_KEY"}
+
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/scheduler/status")
@@ -66,8 +70,16 @@ def settings_status():
 
 @router.get("/settings")
 def get_all_settings():
-    """모든 설정 키-값 반환."""
-    settings = db.get_all_settings()
+    """모든 설정 키-값 반환. 민감 키는 마스킹·제외."""
+    raw = db.get_all_settings()
+    settings = {}
+    for key, value in raw.items():
+        if key in _HIDDEN_KEYS:
+            continue
+        if key in _MASKED_KEYS and value:
+            settings[key] = "****"
+        else:
+            settings[key] = value
     return {"settings": settings}
 
 
