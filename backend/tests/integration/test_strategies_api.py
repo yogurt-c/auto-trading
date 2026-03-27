@@ -10,6 +10,7 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _create_strategy(client, **kwargs):
     """Helper: POST /api/strategies and return the strategy dict."""
     payload = {"name": "Test Strategy", "strategy_type": "value"}
@@ -26,6 +27,7 @@ def _delete_strategy(client, strategy_id):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_get_strategies_returns_list(auth_client):
     """GET /api/strategies → strategies 목록을 list로 반환."""

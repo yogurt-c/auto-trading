@@ -132,6 +132,49 @@ export interface PaginatedRuns {
 
 export type Settings = Record<string, string>
 
+// ── Performance ────────────────────────────────────────────────────────────
+
+export interface RealizedTrade {
+  id: number
+  trade_log_id: number
+  ticker: string
+  qty: number
+  sell_price: number
+  avg_cost: number
+  realized_pnl: number
+  realized_pnl_pct: number
+  strategy_id: number | null
+  strategy_name: string | null
+  executed_at: string
+}
+
+export interface PeriodPnl {
+  period: string
+  realized_pnl: number
+  trade_count: number
+}
+
+export interface StrategyPnl {
+  strategy_id: number | null
+  strategy_name: string
+  realized_pnl: number
+  trade_count: number
+  win_count: number
+  win_rate: number
+}
+
+export interface PerformanceSummary {
+  period_start: string
+  period_end: string
+  total_realized_pnl: number
+  total_trade_count: number
+  win_count: number
+  win_rate: number
+  trades: RealizedTrade[]
+  by_period: PeriodPnl[]
+  by_strategy: StrategyPnl[]
+}
+
 // ── Chat ───────────────────────────────────────────────────────────────────
 
 export interface ChatMessage {

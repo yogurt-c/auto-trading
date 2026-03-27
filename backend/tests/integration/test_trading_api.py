@@ -30,8 +30,10 @@ _MOCK_ORDER = {
 
 def test_get_account_success(auth_client):
     """GET /api/trading/account → Alpaca mock 성공 응답."""
-    with patch("app.api.trading.alpaca_client.get_account", return_value=_MOCK_ACCOUNT), \
-         patch("app.api.trading.alpaca_client.get_positions", return_value=[]):
+    with (
+        patch("app.api.trading.alpaca_client.get_account", return_value=_MOCK_ACCOUNT),
+        patch("app.api.trading.alpaca_client.get_positions", return_value=[]),
+    ):
         resp = auth_client.get("/api/trading/account")
     assert resp.status_code == 200
     data = resp.json()
@@ -48,15 +50,17 @@ def test_get_account_success(auth_client):
 
 def test_get_account_failure(auth_client):
     """GET /api/trading/account → Alpaca 오류 시 503 반환."""
-    with patch("app.api.trading.alpaca_client.get_account", side_effect=Exception("API error")):  # noqa: E501
+    with patch("app.api.trading.alpaca_client.get_account", side_effect=Exception("API error")):
         resp = auth_client.get("/api/trading/account")
     assert resp.status_code == 503
 
 
 def test_place_order_buy_success(auth_client):
     """POST /api/trading/orders → buy 주문 성공."""
-    _patch_order = patch("app.application.tools.alpaca_client.place_order", return_value=_MOCK_ORDER)  # noqa: E501
-    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])  # noqa: E501
+    _patch_order = patch(
+        "app.application.tools.alpaca_client.place_order", return_value=_MOCK_ORDER
+    )
+    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
     with _patch_order, _patch_sync:
         resp = auth_client.post(
             "/api/trading/orders",
@@ -77,7 +81,9 @@ def test_place_order_buy_success(auth_client):
 
 def test_place_order_failure(auth_client):
     """POST /api/trading/orders → Alpaca 오류 시 success=False."""
-    with patch("app.application.tools.alpaca_client.place_order", side_effect=Exception("Order rejected")):  # noqa: E501
+    with patch(
+        "app.application.tools.alpaca_client.place_order", side_effect=Exception("Order rejected")
+    ):
         resp = auth_client.post(
             "/api/trading/orders",
             json={"ticker": "AAPL", "side": "buy", "qty": 1.0},
@@ -91,7 +97,9 @@ def test_place_order_failure(auth_client):
 
 def test_place_order_logged_on_failure(auth_client):
     """POST /api/trading/orders → 실패 시에도 trade log에 failed 상태로 기록."""
-    with patch("app.application.tools.alpaca_client.place_order", side_effect=Exception("Connection error")):  # noqa: E501
+    with patch(
+        "app.application.tools.alpaca_client.place_order", side_effect=Exception("Connection error")
+    ):
         resp = auth_client.post(
             "/api/trading/orders",
             json={"ticker": "TSLA", "side": "buy", "qty": 2.0},
@@ -162,8 +170,10 @@ def test_get_trade_logs_offset_beyond_total(auth_client):
 
 def test_place_order_with_strategy_id(auth_client):
     """POST /api/trading/orders → strategy_id 포함 주문."""
-    _patch_order = patch("app.application.tools.alpaca_client.place_order", return_value=_MOCK_ORDER)  # noqa: E501
-    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])  # noqa: E501
+    _patch_order = patch(
+        "app.application.tools.alpaca_client.place_order", return_value=_MOCK_ORDER
+    )
+    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
     with _patch_order, _patch_sync:
         resp = auth_client.post(
             "/api/trading/orders",

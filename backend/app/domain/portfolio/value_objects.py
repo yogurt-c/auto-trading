@@ -44,3 +44,60 @@ class PortfolioSnapshot(BaseModel):
     total_cost_basis: Money
     total_pnl: Money
     total_pnl_pct: float
+
+
+class RealizedTradeVO(BaseModel):
+    """Value object for a single realized trade row."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    trade_log_id: int
+    ticker: str
+    qty: float
+    sell_price: float
+    avg_cost: float
+    realized_pnl: float
+    realized_pnl_pct: float
+    strategy_id: int | None
+    strategy_name: str | None
+    executed_at: str
+
+
+class PeriodPnl(BaseModel):
+    """Aggregated P&L for a single period bucket."""
+
+    model_config = ConfigDict(frozen=True)
+
+    period: str  # 'YYYY-MM-DD' (day) or 'YYYY-MM' (month)
+    realized_pnl: float
+    trade_count: int
+
+
+class StrategyPnl(BaseModel):
+    """Aggregated P&L per strategy."""
+
+    model_config = ConfigDict(frozen=True)
+
+    strategy_id: int | None
+    strategy_name: str
+    realized_pnl: float
+    trade_count: int
+    win_count: int
+    win_rate: float
+
+
+class PerformanceSummary(BaseModel):
+    """Full performance report for a date range."""
+
+    model_config = ConfigDict(frozen=True)
+
+    period_start: str
+    period_end: str
+    total_realized_pnl: float
+    total_trade_count: int
+    win_count: int
+    win_rate: float
+    trades: list[RealizedTradeVO]
+    by_period: list[PeriodPnl]
+    by_strategy: list[StrategyPnl]

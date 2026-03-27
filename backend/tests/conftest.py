@@ -92,6 +92,7 @@ def sample_strategy():
 def db_holding(_init_db):
     """Holding + Transaction 을 real DB에 생성하고 teardown에서 제거."""
     from app.infrastructure import repository as db
+
     holding = db.upsert_holding("TESTHOLD", 8.0, 200.0)
     yield holding
     db.remove_holding("TESTHOLD")

@@ -13,6 +13,7 @@ import type {
   PaginatedLogs,
   PaginatedRuns,
   Settings,
+  PerformanceSummary,
 } from './types'
 
 // ── Portfolio ──────────────────────────────────────────────────────────────
@@ -185,6 +186,15 @@ export const schedulerApi = {
     } as PaginatedRuns)),
 
   trigger: () => api.post<{ message: string }>('/scheduler/trigger').then(r => r.data),
+}
+
+// ── Performance ────────────────────────────────────────────────────────────
+
+export const performanceApi = {
+  get: (params?: { start_date?: string; end_date?: string; group_by?: 'day' | 'month' }) =>
+    api
+      .get<PerformanceSummary>('/portfolio/performance', { params })
+      .then(r => r.data),
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────

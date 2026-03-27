@@ -10,6 +10,7 @@ const navItems = [
   { to: '/holdings', label: 'Holdings', icon: '💼' },
   { to: '/analysis', label: 'AI Analysis', icon: '🤖' },
   { to: '/auto-trading', label: 'Auto Trading', icon: '⚡' },
+  { to: '/performance', label: 'Performance', icon: '📈' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ]
 

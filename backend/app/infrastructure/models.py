@@ -83,12 +83,32 @@ class TradeLog(DictMixin, Base):
     qty: Mapped[float] = mapped_column(Float, nullable=False)
     order_type: Mapped[str] = mapped_column(String, nullable=False)  # 'market' | 'limit'
     limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    filled_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     alpaca_id: Mapped[str | None] = mapped_column(String, nullable=True)
     ai_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     executed_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
 
     strategy: Mapped[Strategy | None] = relationship("Strategy", back_populates="trade_logs")
+
+
+class RealizedTrade(DictMixin, Base):
+    __tablename__ = "realized_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trade_log_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("trade_logs.id", ondelete="CASCADE"), nullable=False
+    )
+    ticker: Mapped[str] = mapped_column(String, nullable=False)
+    qty: Mapped[float] = mapped_column(Float, nullable=False)
+    sell_price: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_cost: Mapped[float] = mapped_column(Float, nullable=False)
+    realized_pnl: Mapped[float] = mapped_column(Float, nullable=False)
+    realized_pnl_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    strategy_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("strategies.id", ondelete="SET NULL"), nullable=True
+    )
+    executed_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
 
 
 class Setting(DictMixin, Base):

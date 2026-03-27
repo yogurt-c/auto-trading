@@ -98,6 +98,7 @@ def save_setting(key: str, req: SettingValue):
     if key in ("ANTHROPIC_API_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_PAPER"):
         from app.infrastructure.alpaca_client import reset_client
         from app.infrastructure.config import reload_settings
+
         reload_settings()
         reset_client()
     if key in ("scheduler_interval_minutes", "scheduler_enabled"):

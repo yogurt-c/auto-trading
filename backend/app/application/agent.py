@@ -34,9 +34,10 @@ def _api_create_with_retry(client: anthropic.Anthropic, **kwargs) -> Any:
         except anthropic.RateLimitError:
             if attempt == 2:
                 raise
-            wait = 2 ** attempt * 15  # 15s, 30s
+            wait = 2**attempt * 15  # 15s, 30s
             logger.warning(f"rate limit hit, retrying in {wait}s (attempt {attempt + 1}/3)")
             time.sleep(wait)
+
 
 from .tools import (
     PORTFOLIO_TOOLS,
@@ -143,6 +144,7 @@ Rules:
 # Prompt caching helpers
 # ---------------------------------------------------------------------------
 
+
 def _cached_system(prompt: str) -> list[dict]:
     """Wrap system prompt as a single cacheable content block."""
     return [{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}]
@@ -165,6 +167,7 @@ def _cached_tools(tools: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Sub-agent definitions
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SubAgentDef:
@@ -189,7 +192,7 @@ SUBAGENTS: dict[str, SubAgentDef] = {
         description="Automated trade executor. Checks strategy conditions and places Alpaca orders.",  # noqa: E501
         system_prompt=TRADE_EXECUTOR_PROMPT,
         tools=[*TRADE_TOOLS, WEB_SEARCH_TOOL],
-        model=HAIKU,       # Haiku: rule-based execution, no complex reasoning needed
+        model=HAIKU,  # Haiku: rule-based execution, no complex reasoning needed
         max_tokens=1024,
         max_iterations=6,
     ),
@@ -200,11 +203,7 @@ TASK_TOOL = {
     "name": "task",
     "description": (
         "Delegate a task to a specialized sub-agent. "
-        "Available agents: "
-        + ", ".join(
-            f'"{k}": {v.description}'
-            for k, v in SUBAGENTS.items()
-        )
+        "Available agents: " + ", ".join(f'"{k}": {v.description}' for k, v in SUBAGENTS.items())
     ),
     "input_schema": {
         "type": "object",
@@ -230,8 +229,10 @@ ORCHESTRATOR_TOOLS = [*PORTFOLIO_TOOLS, WEB_SEARCH_TOOL, TASK_TOOL]
 # Core agentic loop
 # ---------------------------------------------------------------------------
 
+
 def _build_client() -> anthropic.Anthropic:
     from app.infrastructure.config import get_settings
+
     api_key = get_settings().anthropic_api_key
     if not api_key:
         raise ValueError(
@@ -323,11 +324,13 @@ def run_agent(
             else:
                 result = dispatch_tool(tool_name, tool_input)
 
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tool_block.id,
-                "content": json.dumps(result, default=str),
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_block.id,
+                    "content": json.dumps(result, default=str),
+                }
+            )
 
         loop_messages.append({"role": "user", "content": tool_results})
 
@@ -381,11 +384,13 @@ def _run_subagent(agent_name: str, task: str) -> dict:
             for tb in tool_uses:
                 logger.debug(f"tool call: {tb.name}")
                 result = dispatch_tool(tb.name, tb.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tb.id,
-                    "content": json.dumps(result, default=str),
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tb.id,
+                        "content": json.dumps(result, default=str),
+                    }
+                )
 
             messages.append({"role": "user", "content": tool_results})
 
@@ -399,6 +404,7 @@ def _run_subagent(agent_name: str, task: str) -> dict:
 # ---------------------------------------------------------------------------
 # Streaming orchestrator (for Streamlit chat)
 # ---------------------------------------------------------------------------
+
 
 def stream_orchestrator(
     user_message: str,

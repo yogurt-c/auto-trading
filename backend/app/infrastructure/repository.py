@@ -5,12 +5,13 @@ from __future__ import annotations
 from sqlalchemy import delete, func, select, update
 
 from .database import get_session
-from .models import Holding, SchedulerRun, Setting, Strategy, TradeLog, Transaction
+from .models import Holding, RealizedTrade, SchedulerRun, Setting, Strategy, TradeLog, Transaction
 from .timezone import now_kst
 
 # ---------------------------------------------------------------------------
 # Holdings
 # ---------------------------------------------------------------------------
+
 
 def get_all_holdings() -> list[dict]:
     with get_session() as s:
@@ -34,10 +35,15 @@ def upsert_holding(ticker: str, shares: float, avg_price: float) -> dict:
             holding = Holding(ticker=ticker, shares=shares, avg_price=avg_price)
             s.add(holding)
 
-        s.add(Transaction(
-            ticker=ticker, action="buy",
-            shares=shares, price=avg_price, total=shares * avg_price,
-        ))
+        s.add(
+            Transaction(
+                ticker=ticker,
+                action="buy",
+                shares=shares,
+                price=avg_price,
+                total=shares * avg_price,
+            )
+        )
         s.flush()
         return holding.to_dict()
 
@@ -71,11 +77,13 @@ def rebuild_holdings_from_alpaca(positions: list[dict]) -> list[dict]:
     with get_session() as s:
         s.execute(delete(Holding))
         for pos in positions:
-            s.add(Holding(
-                ticker=pos["ticker"],
-                shares=pos["qty"],
-                avg_price=pos["avg_entry_price"],
-            ))
+            s.add(
+                Holding(
+                    ticker=pos["ticker"],
+                    shares=pos["qty"],
+                    avg_price=pos["avg_entry_price"],
+                )
+            )
         s.commit()
     return get_all_holdings()
 
@@ -83,6 +91,7 @@ def rebuild_holdings_from_alpaca(positions: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Transactions
 # ---------------------------------------------------------------------------
+
 
 def get_transactions(ticker: str | None = None, limit: int = 100) -> list[dict]:
     with get_session() as s:
@@ -95,6 +104,7 @@ def get_transactions(ticker: str | None = None, limit: int = 100) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Strategies
 # ---------------------------------------------------------------------------
+
 
 def get_strategies(status: str | None = None) -> list[dict]:
     with get_session() as s:
@@ -167,6 +177,7 @@ def delete_strategy(strategy_id: int) -> bool:
 # Trade logs
 # ---------------------------------------------------------------------------
 
+
 def add_trade_log(
     ticker: str,
     side: str,
@@ -175,15 +186,22 @@ def add_trade_log(
     status: str,
     strategy_id: int | None = None,
     limit_price: float | None = None,
+    filled_price: float | None = None,
     alpaca_id: str | None = None,
     ai_reasoning: str | None = None,
 ) -> dict:
     with get_session() as s:
         log = TradeLog(
-            ticker=ticker.upper(), side=side, qty=qty,
-            order_type=order_type, status=status,
-            strategy_id=strategy_id, limit_price=limit_price,
-            alpaca_id=alpaca_id, ai_reasoning=ai_reasoning,
+            ticker=ticker.upper(),
+            side=side,
+            qty=qty,
+            order_type=order_type,
+            status=status,
+            strategy_id=strategy_id,
+            limit_price=limit_price,
+            filled_price=filled_price,
+            alpaca_id=alpaca_id,
+            ai_reasoning=ai_reasoning,
         )
         s.add(log)
         s.flush()
@@ -195,11 +213,58 @@ def add_trade_log(
     return result
 
 
+def add_realized_trade(
+    trade_log_id: int,
+    ticker: str,
+    qty: float,
+    sell_price: float,
+    avg_cost: float,
+    realized_pnl: float,
+    realized_pnl_pct: float,
+    strategy_id: int | None = None,
+) -> dict:
+    with get_session() as s:
+        rt = RealizedTrade(
+            trade_log_id=trade_log_id,
+            ticker=ticker.upper(),
+            qty=qty,
+            sell_price=sell_price,
+            avg_cost=avg_cost,
+            realized_pnl=realized_pnl,
+            realized_pnl_pct=realized_pnl_pct,
+            strategy_id=strategy_id,
+        )
+        s.add(rt)
+        s.flush()
+        return rt.to_dict()
+
+
+def get_realized_trades(start_date: str, end_date: str) -> list[dict]:
+    with get_session() as s:
+        rows = (
+            s.execute(
+                select(RealizedTrade)
+                .where(
+                    func.substr(RealizedTrade.executed_at, 1, 10) >= start_date,
+                    func.substr(RealizedTrade.executed_at, 1, 10) <= end_date,
+                )
+                .order_by(RealizedTrade.executed_at.asc())
+            )
+            .scalars()
+            .all()
+        )
+        return [r.to_dict() for r in rows]
+
+
 def get_trade_logs(limit: int = 50, offset: int = 0) -> list[dict]:
     with get_session() as s:
-        rows = s.execute(
-            select(TradeLog).order_by(TradeLog.executed_at.desc()).offset(offset).limit(limit)
-        ).scalars().all()
+        rows = (
+            s.execute(
+                select(TradeLog).order_by(TradeLog.executed_at.desc()).offset(offset).limit(limit)
+            )
+            .scalars()
+            .all()
+        )
         return [r.to_dict() for r in rows]
 
 
@@ -211,6 +276,7 @@ def count_trade_logs() -> int:
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
+
 
 def get_setting(key: str) -> str | None:
     with get_session() as s:
@@ -237,14 +303,13 @@ def get_all_settings() -> dict[str, str]:
 # Strategy timestamps
 # ---------------------------------------------------------------------------
 
+
 def update_strategies_last_checked(strategy_ids: list[int]) -> None:
     if not strategy_ids:
         return
     with get_session() as s:
         s.execute(
-            update(Strategy)
-            .where(Strategy.id.in_(strategy_ids))
-            .values(last_checked_at=now_kst())
+            update(Strategy).where(Strategy.id.in_(strategy_ids)).values(last_checked_at=now_kst())
         )
 
 
@@ -259,6 +324,7 @@ def update_strategy_last_triggered(strategy_id: int) -> None:
 # ---------------------------------------------------------------------------
 # Scheduler runs
 # ---------------------------------------------------------------------------
+
 
 def add_scheduler_run(
     status: str = "running", finished_at=None, summary: str | None = None
@@ -287,12 +353,16 @@ def update_scheduler_run(run_id: int, **fields) -> None:
 
 def get_scheduler_runs(limit: int = 20, offset: int = 0) -> list[dict]:
     with get_session() as s:
-        rows = s.execute(
-            select(SchedulerRun)
-            .order_by(SchedulerRun.started_at.desc())
-            .offset(offset)
-            .limit(limit)
-        ).scalars().all()
+        rows = (
+            s.execute(
+                select(SchedulerRun)
+                .order_by(SchedulerRun.started_at.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+            .scalars()
+            .all()
+        )
         return [r.to_dict() for r in rows]
 
 

@@ -23,6 +23,7 @@ def _is_market_open() -> bool:
         return False
     return _MARKET_OPEN <= now.time() < _MARKET_CLOSE
 
+
 _scheduler: BackgroundScheduler | None = None
 _lock = threading.Lock()
 
@@ -49,6 +50,7 @@ def _job() -> None:
     # limit order 체결분 포함 최신 포지션으로 갱신
     try:
         from app.infrastructure.alpaca_client import sync_positions
+
         sync_positions()
         logger.info("holdings synced from Alpaca at job start")
     except Exception as e:

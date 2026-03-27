@@ -67,9 +67,11 @@ def test_get_scheduler_runs_offset_skips_items(auth_client):
         assert ids0 != ids1
     finally:
         with get_session() as s:
-            s.execute(sa_delete(SchedulerRunModel).where(
-                SchedulerRunModel.id.in_([run_a["id"], run_b["id"]])
-            ))
+            s.execute(
+                sa_delete(SchedulerRunModel).where(
+                    SchedulerRunModel.id.in_([run_a["id"], run_b["id"]])
+                )
+            )
 
 
 def test_get_scheduler_runs_offset_beyond_total(auth_client, db_scheduler_run):

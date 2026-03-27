@@ -60,6 +60,7 @@ def get_positions() -> list[dict]:
 def sync_positions() -> list[dict]:
     """Alpaca 전체 포지션을 받아 로컬 holdings 테이블을 재구성."""
     from . import repository as db
+
     positions = get_positions()
     return db.rebuild_holdings_from_alpaca(positions)
 
@@ -70,10 +71,12 @@ def get_filled_orders(limit: int = 50) -> list[dict]:
     from alpaca.trading.requests import GetOrdersRequest
 
     client = _get_client()
-    orders = client.get_orders(GetOrdersRequest(
-        status=QueryOrderStatus.CLOSED,
-        limit=limit,
-    ))
+    orders = client.get_orders(
+        GetOrdersRequest(
+            status=QueryOrderStatus.CLOSED,
+            limit=limit,
+        )
+    )
 
     result = []
     for o in orders:
@@ -81,15 +84,17 @@ def get_filled_orders(limit: int = 50) -> list[dict]:
             continue
         filled_qty = float(o.filled_qty or 0)
         filled_price = float(o.filled_avg_price or 0)
-        result.append({
-            "id": str(o.id),
-            "ticker": o.symbol,
-            "action": o.side.value,
-            "shares": filled_qty,
-            "price": filled_price,
-            "total": filled_qty * filled_price,
-            "executed_at": o.filled_at.isoformat() if o.filled_at else None,
-        })
+        result.append(
+            {
+                "id": str(o.id),
+                "ticker": o.symbol,
+                "action": o.side.value,
+                "shares": filled_qty,
+                "price": filled_price,
+                "total": filled_qty * filled_price,
+                "executed_at": o.filled_at.isoformat() if o.filled_at else None,
+            }
+        )
     return result
 
 
@@ -110,12 +115,17 @@ def place_order(
 
     if order_type == "limit" and limit_price:
         req = LimitOrderRequest(
-            symbol=ticker.upper(), qty=qty, side=order_side,
-            time_in_force=TimeInForce.DAY, limit_price=limit_price,
+            symbol=ticker.upper(),
+            qty=qty,
+            side=order_side,
+            time_in_force=TimeInForce.DAY,
+            limit_price=limit_price,
         )
     else:
         req = MarketOrderRequest(
-            symbol=ticker.upper(), qty=qty, side=order_side,
+            symbol=ticker.upper(),
+            qty=qty,
+            side=order_side,
             time_in_force=TimeInForce.DAY,
         )
 

@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Holdings from './pages/Holdings'
 import Analysis from './pages/Analysis'
 import AutoTrading from './pages/AutoTrading'
+import Performance from './pages/Performance'
 import Settings from './pages/Settings'
 import LoginSetup from './pages/LoginSetup'
 
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
           { path: 'holdings', element: <Holdings /> },
           { path: 'analysis', element: <Analysis /> },
           { path: 'auto-trading', element: <AutoTrading /> },
+          { path: 'performance', element: <Performance /> },
           { path: 'settings', element: <Settings /> },
         ],
       },

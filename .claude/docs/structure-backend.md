@@ -14,7 +14,7 @@ backend/
 │   │   ├── __init__.py
 │   │   ├── auth.py           # 인증 엔드포인트 (status/setup/login/change-password/me)
 │   │   ├── deps.py           # FastAPI 공통 의존성 (get_current_user)
-│   │   ├── portfolio.py      # GET /api/portfolio (P&L), sync, holdings, transactions
+│   │   ├── portfolio.py      # GET /api/portfolio (P&L), sync, holdings, transactions, performance
 │   │   ├── strategies.py     # CRUD + evaluate + dca-due
 │   │   ├── trading.py        # Alpaca account, orders, logs
 │   │   ├── agent.py          # SSE chat stream, trade-executor trigger
@@ -37,8 +37,8 @@ backend/
 │       ├── __init__.py
 │       ├── portfolio/
 │       │   ├── __init__.py
-│       │   ├── services.py   # PortfolioValuationService
-│       │   └── value_objects.py  # Money, HoldingValuation, PortfolioSnapshot
+│       │   ├── services.py   # PortfolioValuationService, RealizedPnlAggregator
+│       │   └── value_objects.py  # Money, HoldingValuation, PortfolioSnapshot, RealizedTradeVO, PerformanceSummary
 │       └── trading_strategy/
 │           ├── __init__.py
 │           ├── services.py   # StrategyEvaluator, DcaScheduleChecker, StrategyValidator
@@ -51,7 +51,9 @@ backend/
 │   ├── env.py
 │   └── versions/
 │       ├── 001_initial_schema.py
-│       └── 002_scheduler.py
+│       ├── 002_scheduler.py
+│       ├── 003_timezone_kst.py
+│       └── 004_realized_trades.py
 └── tests/                    # pytest (unit + integration + e2e)
     ├── conftest.py
     ├── unit/domain/
@@ -92,15 +94,15 @@ backend/
 | `config.py` | Settings 캐시 (SQLAlchemy 기반) | `reload_settings()` — 설정 저장 후 호출 |
 | `database.py` | SQLite 초기화 (Alembic auto-migrate) | `get_session()` — context manager |
 | `market.py` | `get_current_prices(tickers)` | yfinance, 실패 티커는 결과에서 제외 |
-| `models.py` | ORM: Holding, Transaction, Strategy, TradeLog, Setting, SchedulerRun | |
-| `repository.py` | 전체 DB CRUD 함수 | get_all_holdings, save_strategy, add_trade_log … |
+| `models.py` | ORM: Holding, Transaction, Strategy, TradeLog, RealizedTrade, Setting, SchedulerRun | |
+| `repository.py` | 전체 DB CRUD 함수 | get_all_holdings, save_strategy, add_trade_log, add_realized_trade, get_realized_trades … |
 
 ### `backend/app/domain/` — Domain Layer
 
 | 파일 | 역할 | 비고 |
 |------|------|------|
-| `portfolio/services.py` | `PortfolioValuationService.calculate()` | I/O 없음, 순수 계산 |
-| `portfolio/value_objects.py` | `Money`, `HoldingValuation`, `PortfolioSnapshot` | Pydantic v2, frozen=True |
+| `portfolio/services.py` | `PortfolioValuationService.calculate()`, `RealizedPnlAggregator.aggregate()` | I/O 없음, 순수 계산 |
+| `portfolio/value_objects.py` | `Money`, `HoldingValuation`, `PortfolioSnapshot`, `RealizedTradeVO`, `PeriodPnl`, `StrategyPnl`, `PerformanceSummary` | Pydantic v2, frozen=True |
 | `trading_strategy/services.py` | `StrategyEvaluator`, `DcaScheduleChecker`, `StrategyValidator` | I/O 없음, 순수 계산 |
 | `trading_strategy/value_objects.py` | `MarketData`, `EvaluationResult`, `ValidationWarning` | Pydantic v2, frozen=True |
 

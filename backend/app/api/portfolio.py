@@ -1,8 +1,11 @@
 """Portfolio API — holdings, sync, transactions."""
 
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_current_user
+from app.application.tools import get_performance as _get_performance
 from app.domain.portfolio.services import PortfolioValuationService
 from app.infrastructure import alpaca_client
 from app.infrastructure import repository as db
@@ -87,3 +90,32 @@ def get_transactions(limit: int = Query(50, ge=1, le=500)):
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Alpaca 주문 이력 조회 실패: {e!s}")
     return {"transactions": txns, "count": len(txns)}
+
+
+@router.get("/portfolio/performance")
+def get_performance(
+    start_date: str = Query(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="시작일 (YYYY-MM-DD). 기본값: 오늘 기준 -30일",
+    ),
+    end_date: str = Query(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="종료일 (YYYY-MM-DD). 기본값: 오늘",
+    ),
+    group_by: str = Query(
+        default="day",
+        pattern=r"^(day|month)$",
+        description="기간 집계 단위: 'day' | 'month'",
+    ),
+):
+    """기간별 실현 손익 집계 반환."""
+    today = date.today().isoformat()
+    if not end_date:
+        end_date = today
+    if not start_date:
+        start_date = (date.today() - timedelta(days=30)).isoformat()
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+    return _get_performance(start_date, end_date, group_by)

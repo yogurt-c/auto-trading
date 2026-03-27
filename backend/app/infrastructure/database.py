@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 def _get_db_url() -> str:
     import os
+
     db_path = os.environ["DB_PATH"]
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{db_path}"

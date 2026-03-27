@@ -174,6 +174,7 @@ graph LR
         P2["POST /api/portfolio/sync<br/>Alpaca 포지션 동기화"]
         P3["GET /api/portfolio/holdings<br/>DB 목록 (시세 없음)"]
         P4["GET /api/portfolio/transactions<br/>Alpaca 체결 주문 이력"]
+        P5["GET /api/portfolio/performance<br/>기간별 실현 손익 집계"]
     end
 
     subgraph strategies["/api/strategies"]

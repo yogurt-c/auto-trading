@@ -10,7 +10,7 @@ from typing import Any
 
 from loguru import logger
 
-from app.domain.portfolio.services import PortfolioValuationService
+from app.domain.portfolio.services import PortfolioValuationService, RealizedPnlAggregator
 from app.domain.trading_strategy.services import (
     DcaScheduleChecker,
     StrategyEvaluator,
@@ -25,11 +25,13 @@ _strategy_validator = StrategyValidator()
 _strategy_evaluator = StrategyEvaluator()
 _dca_checker = DcaScheduleChecker()
 _valuation_service = PortfolioValuationService()
+_pnl_aggregator = RealizedPnlAggregator()
 
 
 # ---------------------------------------------------------------------------
 # Tool implementations
 # ---------------------------------------------------------------------------
+
 
 def get_portfolio() -> dict:
     """Return the full portfolio: all holdings with metadata."""
@@ -232,6 +234,25 @@ def get_scheduler_runs(limit: int = 10) -> dict:
     return {"runs": runs, "count": len(runs)}
 
 
+def get_performance(start_date: str, end_date: str, group_by: str = "day") -> dict:
+    """기간 내 실현 손익 집계 반환."""
+    realized = db.get_realized_trades(start_date, end_date)
+    strategies = db.get_strategies()
+    strategy_names = {s["id"]: s["name"] for s in strategies}
+    summary = _pnl_aggregator.aggregate(realized, strategy_names, start_date, end_date, group_by)
+    return {
+        "period_start": summary.period_start,
+        "period_end": summary.period_end,
+        "total_realized_pnl": summary.total_realized_pnl,
+        "total_trade_count": summary.total_trade_count,
+        "win_count": summary.win_count,
+        "win_rate": summary.win_rate,
+        "trades": [t.model_dump() for t in summary.trades],
+        "by_period": [p.model_dump() for p in summary.by_period],
+        "by_strategy": [s.model_dump() for s in summary.by_strategy],
+    }
+
+
 def _sync_from_alpaca() -> str:
     """주문 완료 후 Alpaca 전체 포지션으로 holdings를 재구성."""
     try:
@@ -284,6 +305,13 @@ def place_order(
                     "error": f"max_position_usd 한도 초과: {detail}",
                 }
 
+    # 매도 시 avg_cost 미리 조회 (Alpaca sync 이전에 수행해야 정확한 값 보장)
+    avg_cost: float | None = None
+    if side.lower() == "sell":
+        holdings = db.get_all_holdings()
+        holding = next((h for h in holdings if h["ticker"] == ticker.upper()), None)
+        avg_cost = holding["avg_price"] if holding else None
+
     try:
         order = alpaca_client.place_order(
             ticker=ticker,
@@ -292,6 +320,7 @@ def place_order(
             order_type=order_type,
             limit_price=limit_price,
         )
+        filled_price: float | None = order.get("filled_avg_price")
         log = db.add_trade_log(
             ticker=ticker,
             side=side,
@@ -300,15 +329,45 @@ def place_order(
             status=order["status"],
             strategy_id=strategy_id,
             limit_price=limit_price,
+            filled_price=filled_price,
             alpaca_id=order["alpaca_id"],
             ai_reasoning=ai_reasoning,
         )
+
+        # 매도 체결 시 실현 손익 스냅샷 저장
+        if (
+            side.lower() == "sell"
+            and order["status"] == "filled"
+            and avg_cost is not None
+            and filled_price is not None
+        ):
+            pnl = (filled_price - avg_cost) * qty
+            pnl_pct = round((pnl / (avg_cost * qty) * 100) if avg_cost else 0.0, 2)
+            db.add_realized_trade(
+                trade_log_id=log["id"],
+                ticker=ticker,
+                qty=qty,
+                sell_price=filled_price,
+                avg_cost=avg_cost,
+                realized_pnl=pnl,
+                realized_pnl_pct=pnl_pct,
+                strategy_id=strategy_id,
+            )
+            logger.info(
+                f"realized_trade saved: {ticker} qty={qty} "
+                f"sell={filled_price} cost={avg_cost} pnl={pnl:.2f}"
+            )
 
         # holdings DB 동기화
         holdings_synced = _sync_from_alpaca()
         logger.info(f"place_order success: {side} {qty} {ticker}, sync={holdings_synced}")
 
-        return {"success": True, "order": order, "log_id": log["id"], "holdings_synced": holdings_synced}  # noqa: E501
+        return {
+            "success": True,
+            "order": order,
+            "log_id": log["id"],
+            "holdings_synced": holdings_synced,
+        }
     except Exception as e:
         logger.error(f"place_order failed: {ticker} {side} — {e}")
         db.add_trade_log(
@@ -404,18 +463,48 @@ STRATEGY_TOOLS = [
                     "type": "string",
                     "enum": ["dca", "momentum", "value", "stop_loss", "take_profit", "custom"],
                 },
-                "summary": {"type": "string", "description": "Summary of the strategy agreed with user"},  # noqa: E501
-                "ticker": {"type": "string", "description": "Target ticker (null = whole portfolio)"},  # noqa: E501
-                "ai_rationale": {"type": "string", "description": "AI's reasoning for this strategy"},  # noqa: E501
-                "entry_price_drop_pct": {"type": "number", "description": "Buy trigger: % drop from current price (negative, e.g. -5.0)"},  # noqa: E501
-                "entry_rsi_below": {"type": "number", "description": "Buy trigger: RSI threshold (e.g. 30)"},  # noqa: E501
-                "take_profit_pct": {"type": "number", "description": "Sell trigger: target profit % (e.g. 20.0)"},  # noqa: E501
-                "stop_loss_pct": {"type": "number", "description": "Sell trigger: stop loss % (e.g. -10.0)"},  # noqa: E501
-                "sell_ratio": {"type": "number", "description": "Fraction of position to sell (0.5 = half)"},  # noqa: E501
+                "summary": {
+                    "type": "string",
+                    "description": "Summary of the strategy agreed with user",
+                },
+                "ticker": {
+                    "type": "string",
+                    "description": "Target ticker (null = whole portfolio)",
+                },
+                "ai_rationale": {
+                    "type": "string",
+                    "description": "AI's reasoning for this strategy",
+                },
+                "entry_price_drop_pct": {
+                    "type": "number",
+                    "description": "Buy trigger: % drop from current price (negative, e.g. -5.0)",
+                },
+                "entry_rsi_below": {
+                    "type": "number",
+                    "description": "Buy trigger: RSI threshold (e.g. 30)",
+                },
+                "take_profit_pct": {
+                    "type": "number",
+                    "description": "Sell trigger: target profit % (e.g. 20.0)",
+                },
+                "stop_loss_pct": {
+                    "type": "number",
+                    "description": "Sell trigger: stop loss % (e.g. -10.0)",
+                },
+                "sell_ratio": {
+                    "type": "number",
+                    "description": "Fraction of position to sell (0.5 = half)",
+                },
                 "dca_amount_usd": {"type": "number", "description": "USD amount per DCA purchase"},
                 "dca_frequency_days": {"type": "integer", "description": "DCA interval in days"},
-                "max_position_usd": {"type": "number", "description": "Maximum total investment in USD"},  # noqa: E501
-                "strategy_id": {"type": "integer", "description": "Existing strategy ID to update (omit to create new)"},  # noqa: E501
+                "max_position_usd": {
+                    "type": "number",
+                    "description": "Maximum total investment in USD",
+                },
+                "strategy_id": {
+                    "type": "integer",
+                    "description": "Existing strategy ID to update (omit to create new)",
+                },
             },
             "required": ["name", "strategy_type"],
         },
@@ -471,10 +560,25 @@ TRADE_TOOLS = [
                 "side": {"type": "string", "enum": ["buy", "sell"]},
                 "qty": {"type": "number", "description": "Number of shares"},
                 "order_type": {"type": "string", "enum": ["market", "limit"], "default": "market"},
-                "limit_price": {"type": "number", "description": "Limit price (only for limit orders)"},  # noqa: E501
-                "strategy_id": {"type": "integer", "description": "Associated strategy ID for logging"},  # noqa: E501
-                "ai_reasoning": {"type": "string", "description": "AI's reason for placing this order"},  # noqa: E501
-                "max_position_usd": {"type": "number", "description": "Position size cap in USD from the strategy. If set, the order is rejected before submission if it would exceed this limit."},  # noqa: E501
+                "limit_price": {
+                    "type": "number",
+                    "description": "Limit price (only for limit orders)",
+                },
+                "strategy_id": {
+                    "type": "integer",
+                    "description": "Associated strategy ID for logging",
+                },
+                "ai_reasoning": {
+                    "type": "string",
+                    "description": "AI's reason for placing this order",
+                },
+                "max_position_usd": {
+                    "type": "number",
+                    "description": (
+                        "Position size cap in USD from the strategy. "
+                        "If set, the order is rejected before submission if it would exceed this limit."  # noqa: E501
+                    ),
+                },
             },
             "required": ["ticker", "side", "qty"],
         },

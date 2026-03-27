@@ -1,6 +1,5 @@
 """Trading API — Alpaca account, orders, logs."""
 
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 

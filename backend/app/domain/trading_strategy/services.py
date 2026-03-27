@@ -49,9 +49,7 @@ class StrategyValidator:
         if entry_rsi_below is not None and not (0 < entry_rsi_below < 100):
             warnings.append(
                 ValidationWarning(
-                    message=(
-                        f"entry_rsi_below={entry_rsi_below}이 유효 범위(0~100)를 벗어납니다."
-                    )
+                    message=(f"entry_rsi_below={entry_rsi_below}이 유효 범위(0~100)를 벗어납니다.")
                 )
             )
 
@@ -88,9 +86,7 @@ class StrategyValidator:
         if sell_ratio is not None and not (0 < sell_ratio <= 1):
             warnings.append(
                 ValidationWarning(
-                    message=(
-                        f"sell_ratio={sell_ratio}이 유효 범위(0 초과 ~ 1 이하)를 벗어납니다."
-                    )
+                    message=(f"sell_ratio={sell_ratio}이 유효 범위(0 초과 ~ 1 이하)를 벗어납니다.")
                 )
             )
 
@@ -122,9 +118,7 @@ class StrategyValidator:
 
         if strategy_type == "dca" and dca_frequency_days is None:
             warnings.append(
-                ValidationWarning(
-                    message="DCA 전략인데 dca_frequency_days가 설정되지 않았습니다."
-                )
+                ValidationWarning(message="DCA 전략인데 dca_frequency_days가 설정되지 않았습니다.")
             )
 
         return warnings
