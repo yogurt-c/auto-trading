@@ -427,10 +427,19 @@ def run_trade_executor() -> str:
     Run the trade executor sub-agent once (for scheduled/manual trigger).
     Returns the agent's summary.
     """
-    logger.info("run_trade_executor started")
-    result = _run_subagent(
-        "trade-executor",
-        "Review all active strategies, check current market conditions, and execute any triggered orders.",  # noqa: E501
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    et_str = now_et.strftime("%Y-%m-%d %H:%M ET (%A)")
+
+    task = (
+        f"Current time: {et_str}\n\n"
+        "Review all active strategies, check current market conditions, "
+        "and execute any triggered orders."
     )
+
+    logger.info("run_trade_executor started")
+    result = _run_subagent("trade-executor", task)
     logger.info("run_trade_executor completed")
     return result.get("result", "Trade executor completed.")

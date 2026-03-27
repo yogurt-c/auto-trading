@@ -41,18 +41,18 @@ def _job() -> None:
 
     logger.debug("scheduler job fired")
 
-    # limit order 체결분 포함 항상 최신 포지션으로 갱신
+    # 장 외 시간에는 그냥 종료
+    if not _is_market_open():
+        logger.info("market closed — run skipped")
+        return
+
+    # limit order 체결분 포함 최신 포지션으로 갱신
     try:
         from app.infrastructure.alpaca_client import sync_positions
         sync_positions()
         logger.info("holdings synced from Alpaca at job start")
     except Exception as e:
         logger.warning(f"pre-job Alpaca sync failed: {e}")
-
-    # 장 외 시간에는 그냥 종료
-    if not _is_market_open():
-        logger.info("market closed — run skipped")
-        return
 
     run = add_scheduler_run()  # status='running'
     try:

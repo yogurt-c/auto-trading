@@ -100,4 +100,6 @@ def save_setting(key: str, req: SettingValue):
         from app.infrastructure.config import reload_settings
         reload_settings()
         reset_client()
+    if key in ("scheduler_interval_minutes", "scheduler_enabled"):
+        ensure_started()
     return {"success": True}

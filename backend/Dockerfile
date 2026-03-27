@@ -3,8 +3,9 @@ FROM python:3.11-slim
 # backend/ 디렉토리가 WORKDIR이 됨 (main.py, infrastructure/ 등이 여기에 위치)
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+# 의존성 레이어 캐시를 위해 stub 패키지 생성 후 설치
+RUN mkdir -p app && touch app/__init__.py && pip install --no-cache-dir .
 
 # 소스 복사 (venv 제외)
 COPY . .
