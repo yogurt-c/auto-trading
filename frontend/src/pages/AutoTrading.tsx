@@ -112,12 +112,12 @@ export default function AutoTrading() {
   })
 
   const saveIntervalMutation = useMutation({
-    mutationFn: (v: string) => settingsApi.set('SCHEDULER_INTERVAL_MINUTES', v),
+    mutationFn: (v: string) => settingsApi.set('scheduler_interval_minutes', v),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['settings'] }),
   })
 
   const saveEnabledMutation = useMutation({
-    mutationFn: (v: string) => settingsApi.set('SCHEDULER_ENABLED', v),
+    mutationFn: (v: string) => settingsApi.set('scheduler_enabled', v),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['settings'] }),
   })
 
@@ -125,8 +125,8 @@ export default function AutoTrading() {
   const paused = (strategies ?? []).filter(s => s.status === 'paused')
   const completed = (strategies ?? []).filter(s => s.status === 'completed')
 
-  const schedulerEnabled = settings?.['SCHEDULER_ENABLED'] === 'true'
-  const currentInterval = settings?.['SCHEDULER_INTERVAL_MINUTES'] ?? '30'
+  const schedulerEnabled = settings?.['scheduler_enabled'] === 'true'
+  const currentInterval = settings?.['scheduler_interval_minutes'] ?? '30'
 
   return (
     <Page>

@@ -88,7 +88,7 @@ def _validate_strategy_params(
 def save_strategy(
     name: str,
     strategy_type: str,
-    summary: str = "",
+    description: str = "",
     ticker: str | None = None,
     ai_rationale: str | None = None,
     entry_price_drop_pct: float | None = None,
@@ -118,7 +118,7 @@ def save_strategy(
     result = db.save_strategy(
         name=name,
         strategy_type=strategy_type,
-        description=summary,
+        description=description,
         ticker=ticker,
         ai_rationale=ai_rationale,
         entry_price_drop_pct=entry_price_drop_pct,
@@ -463,9 +463,9 @@ STRATEGY_TOOLS = [
                     "type": "string",
                     "enum": ["dca", "momentum", "value", "stop_loss", "take_profit", "custom"],
                 },
-                "summary": {
+                "description": {
                     "type": "string",
-                    "description": "Summary of the strategy agreed with user",
+                    "description": "Description of the strategy agreed with user",
                 },
                 "ticker": {
                     "type": "string",

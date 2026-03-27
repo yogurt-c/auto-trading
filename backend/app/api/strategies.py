@@ -27,7 +27,7 @@ def get_strategies(status: str | None = None):
 class StrategyCreate(BaseModel):
     name: str
     strategy_type: str
-    summary: str = ""
+    description: str = ""
     ticker: str | None = None
     ai_rationale: str | None = None
     entry_price_drop_pct: float | None = None
