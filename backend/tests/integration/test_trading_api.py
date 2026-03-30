@@ -245,6 +245,37 @@ def test_update_trade_log_status(db_partially_filled_log):
     assert updated["filled_price"] == pytest.approx(175.5)
 
 
+def test_place_limit_order_captures_filled_price(auth_client):
+    """POST /api/trading/orders → limit 주문도 체결 시 filled_price 저장."""
+    _mock_order = {
+        "alpaca_id": "limit-order-id-456",
+        "ticker": "AAPL",
+        "side": "buy",
+        "qty": 1.0,
+        "order_type": "limit",
+        "status": "filled",
+        "limit_price": 145.0,
+        "filled_avg_price": 144.8,
+    }
+    _patch_order = patch("app.application.tools.alpaca_client.place_order", return_value=_mock_order)
+    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
+    with _patch_order, _patch_sync:
+        resp = auth_client.post(
+            "/api/trading/orders",
+            json={"ticker": "AAPL", "side": "buy", "qty": 1.0, "order_type": "limit", "limit_price": 145.0},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+
+    log_resp = auth_client.get("/api/trading/logs?limit=100&offset=0")
+    logs = log_resp.json()["logs"]
+    log = next((lg for lg in logs if lg["alpaca_id"] == "limit-order-id-456"), None)
+    assert log is not None
+    assert log["filled_price"] == pytest.approx(144.8)
+    assert log["limit_price"] == pytest.approx(145.0)
+
+
 def test_place_order_with_strategy_id(auth_client):
     """POST /api/trading/orders → strategy_id 포함 주문."""
     _patch_order = patch(

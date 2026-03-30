@@ -144,19 +144,18 @@ def place_order(
     order = client.submit_order(req)
     logger.info(f"order submitted: {side} {qty} {ticker} [{order_type}] id={order.id}")
 
-    # market order는 체결 대기 후 filled_avg_price 확보 (최대 5초)
+    # 체결가 확보 대기 (최대 5초) — market/limit 공통
     filled_avg_price = None
-    if order_type == "market":
-        for _ in range(10):
-            time.sleep(0.5)
-            o = client.get_order_by_id(str(order.id))
-            if o.filled_avg_price is not None:
-                filled_avg_price = float(o.filled_avg_price)
-                order = o
-                logger.info(f"order filled: {ticker} @ {filled_avg_price}")
-                break
-        else:
-            logger.warning(f"fill price not confirmed after 5s: {ticker} id={order.id}")
+    for _ in range(10):
+        time.sleep(0.5)
+        o = client.get_order_by_id(str(order.id))
+        if o.filled_avg_price is not None:
+            filled_avg_price = float(o.filled_avg_price)
+            order = o
+            logger.info(f"order filled: {ticker} @ {filled_avg_price}")
+            break
+    else:
+        logger.warning(f"fill price not confirmed after 5s: {ticker} id={order.id}")
 
     return {
         "alpaca_id": str(order.id),
