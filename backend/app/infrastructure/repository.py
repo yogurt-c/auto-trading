@@ -256,6 +256,33 @@ def get_realized_trades(start_date: str, end_date: str) -> list[dict]:
         return [r.to_dict() for r in rows]
 
 
+def get_partially_filled_logs() -> list[dict]:
+    """alpaca_id가 있는 partially_filled 거래 로그 반환."""
+    with get_session() as s:
+        rows = (
+            s.execute(
+                select(TradeLog).where(
+                    TradeLog.status == "partially_filled",
+                    TradeLog.alpaca_id.isnot(None),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [r.to_dict() for r in rows]
+
+
+def update_trade_log_status(log_id: int, status: str, filled_price: float | None = None) -> None:
+    """거래 로그 상태 및 체결가 업데이트."""
+    with get_session() as s:
+        log = s.get(TradeLog, log_id)
+        if log:
+            log.status = status
+            if filled_price is not None:
+                log.filled_price = filled_price
+            s.flush()
+
+
 def get_trade_logs(limit: int = 50, offset: int = 0) -> list[dict]:
     with get_session() as s:
         rows = (

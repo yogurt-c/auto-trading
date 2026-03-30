@@ -47,12 +47,17 @@ def _job() -> None:
         logger.info("market closed — run skipped")
         return
 
-    # limit order 체결분 포함 최신 포지션으로 갱신
+    # limit order 체결분 포함 최신 포지션으로 갱신 + 미결 주문 상태 동기화
     try:
+        from app.application.tools import sync_pending_orders
         from app.infrastructure.alpaca_client import sync_positions
 
         sync_positions()
         logger.info("holdings synced from Alpaca at job start")
+
+        synced = sync_pending_orders()
+        if synced:
+            logger.info(f"pending orders synced: {synced} updated")
     except Exception as e:
         logger.warning(f"pre-job Alpaca sync failed: {e}")
 

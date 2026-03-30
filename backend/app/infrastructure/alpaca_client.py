@@ -57,6 +57,18 @@ def get_positions() -> list[dict]:
     ]
 
 
+def get_order(order_id: str) -> dict:
+    """Alpaca 주문 단건 조회."""
+    client = _get_client()
+    o = client.get_order_by_id(order_id)
+    return {
+        "alpaca_id": str(o.id),
+        "status": o.status.value,
+        "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
+        "filled_qty": float(o.filled_qty) if o.filled_qty else None,
+    }
+
+
 def sync_positions() -> list[dict]:
     """Alpaca 전체 포지션을 받아 로컬 holdings 테이블을 재구성."""
     from . import repository as db

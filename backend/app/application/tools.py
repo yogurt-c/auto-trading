@@ -384,6 +384,32 @@ def place_order(
 
 
 # ---------------------------------------------------------------------------
+# Pending order sync
+# ---------------------------------------------------------------------------
+
+
+def sync_pending_orders() -> int:
+    """partially_filled 주문을 Alpaca에서 현재 상태로 갱신. 업데이트된 건수 반환."""
+    logs = db.get_partially_filled_logs()
+    updated = 0
+    for log in logs:
+        try:
+            order = alpaca_client.get_order(log["alpaca_id"])
+            new_status = order["status"]
+            if new_status != "partially_filled":
+                db.update_trade_log_status(
+                    log["id"],
+                    status=new_status,
+                    filled_price=order.get("filled_avg_price"),
+                )
+                logger.info(f"trade_log {log['id']} {log['ticker']} {log['side']}: partially_filled → {new_status}")
+                updated += 1
+        except Exception as e:
+            logger.warning(f"sync order {log['alpaca_id']} failed: {e}")
+    return updated
+
+
+# ---------------------------------------------------------------------------
 # Tool dispatcher
 # ---------------------------------------------------------------------------
 
