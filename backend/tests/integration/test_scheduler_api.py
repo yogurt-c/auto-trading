@@ -1,5 +1,7 @@
 """Integration tests for Scheduler API endpoints (pagination)."""
 
+from unittest.mock import patch
+
 
 def test_get_scheduler_runs_paginated_structure(auth_client, db_scheduler_run):
     """GET /api/scheduler/runs → runs, total, limit, offset 포함."""
@@ -84,3 +86,25 @@ def test_get_scheduler_runs_offset_beyond_total(auth_client, db_scheduler_run):
     data = resp.json()
     assert data["runs"] == []
     assert data["total"] == total
+
+
+def test_settings_status_paper_false_returns_warning(auth_client):
+    """settings_status → ALPACA_PAPER=false 시 ok=False, reason=live_trading_warning."""
+    from app.infrastructure.config import Settings
+
+    mock_settings = Settings(
+        anthropic_api_key="key1",
+        alpaca_api_key="key2",
+        alpaca_secret_key="key3",
+        alpaca_paper=False,
+    )
+    with (
+        patch("app.infrastructure.config.get_settings", return_value=mock_settings),
+        patch("app.infrastructure.alpaca_client.get_account", return_value={}),
+    ):
+        resp = auth_client.get("/api/settings/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is False
+    assert data["reason"] == "live_trading_warning"
+    assert "ALPACA_PAPER" in data["message"]

@@ -332,6 +332,7 @@ def place_order(
             filled_price=filled_price,
             alpaca_id=order["alpaca_id"],
             ai_reasoning=ai_reasoning,
+            avg_cost_snapshot=avg_cost if side.lower() == "sell" else None,
         )
 
         # 매도 체결 시 실현 손익 스냅샷 저장
@@ -340,6 +341,7 @@ def place_order(
             and order["status"] == "filled"
             and avg_cost is not None
             and filled_price is not None
+            and filled_price > 0
         ):
             pnl = (filled_price - avg_cost) * qty
             pnl_pct = round((pnl / (avg_cost * qty) * 100) if avg_cost else 0.0, 2)
@@ -397,12 +399,44 @@ def sync_pending_orders() -> int:
             order = alpaca_client.get_order(log["alpaca_id"])
             new_status = order["status"]
             if new_status != "partially_filled":
+                filled_price = order.get("filled_avg_price")
                 db.update_trade_log_status(
                     log["id"],
                     status=new_status,
-                    filled_price=order.get("filled_avg_price"),
+                    filled_price=filled_price,
                 )
-                logger.info(f"trade_log {log['id']} {log['ticker']} {log['side']}: partially_filled → {new_status}")
+                logger.info(
+                    f"trade_log {log['id']} {log['ticker']} {log['side']}: "
+                    f"partially_filled → {new_status}"
+                )
+
+                # 매도 체결 시 realized_trade 생성 (avg_cost_snapshot이 저장된 경우)
+                avg_cost_snap = log.get("avg_cost_snapshot")
+                if (
+                    new_status == "filled"
+                    and log["side"].lower() == "sell"
+                    and filled_price is not None
+                    and filled_price > 0
+                    and avg_cost_snap is not None
+                ):
+                    qty = log["qty"]
+                    pnl = (filled_price - avg_cost_snap) * qty
+                    pnl_pct = round(pnl / (avg_cost_snap * qty) * 100, 2)
+                    db.add_realized_trade(
+                        trade_log_id=log["id"],
+                        ticker=log["ticker"],
+                        qty=qty,
+                        sell_price=filled_price,
+                        avg_cost=avg_cost_snap,
+                        realized_pnl=pnl,
+                        realized_pnl_pct=pnl_pct,
+                        strategy_id=log.get("strategy_id"),
+                    )
+                    logger.info(
+                        f"realized_trade (deferred): {log['ticker']} qty={qty} "
+                        f"sell={filled_price} cost={avg_cost_snap} pnl={pnl:.2f}"
+                    )
+
                 updated += 1
         except Exception as e:
             logger.warning(f"sync order {log['alpaca_id']} failed: {e}")

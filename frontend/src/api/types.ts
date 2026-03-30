@@ -64,6 +64,7 @@ export interface TradeLog {
   price: number | null
   status: string
   error_message: string | null
+  avg_cost_snapshot: number | null
   executed_at: string
 }
 

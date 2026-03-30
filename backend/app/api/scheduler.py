@@ -58,6 +58,15 @@ def settings_status():
 
     try:
         alpaca_client.get_account()
+        if not s.alpaca_paper:
+            return {
+                "ok": False,
+                "reason": "live_trading_warning",
+                "message": (
+                    "경고: ALPACA_PAPER가 false로 설정되어 있습니다. "
+                    "이 앱은 페이퍼 트레이딩 전용입니다. Settings에서 true로 변경하세요."
+                ),
+            }
         return {"ok": True, "reason": "ok", "message": ""}
     except ValueError as e:
         return {"ok": False, "reason": "missing", "message": str(e)}

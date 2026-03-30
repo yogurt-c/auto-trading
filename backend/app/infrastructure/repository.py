@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from loguru import logger
 from sqlalchemy import delete, func, select, update
 
 from .database import get_session
@@ -21,12 +22,21 @@ def get_all_holdings() -> list[dict]:
 
 def upsert_holding(ticker: str, shares: float, avg_price: float) -> dict:
     """Add shares or update via weighted average."""
+    if shares < 0:
+        raise ValueError(f"shares must be non-negative, got {shares}")
     ticker = ticker.upper()
     with get_session() as s:
-        existing = s.execute(select(Holding).where(Holding.ticker == ticker)).scalar_one_or_none()
+        existing = s.execute(
+            select(Holding).where(Holding.ticker == ticker).with_for_update()
+        ).scalar_one_or_none()
 
         if existing:
             new_total = existing.shares + shares
+            if new_total < 0:
+                raise ValueError(
+                    f"resulting shares would be negative: {new_total} "
+                    f"(existing={existing.shares}, delta={shares})"
+                )
             new_avg = (existing.avg_price * existing.shares + avg_price * shares) / new_total
             existing.shares = new_total
             existing.avg_price = new_avg
@@ -75,6 +85,14 @@ def remove_holding(ticker: str) -> bool:
 def rebuild_holdings_from_alpaca(positions: list[dict]) -> list[dict]:
     """Alpaca 전체 포지션으로 holdings 테이블을 원자적으로 재구성."""
     with get_session() as s:
+        existing_count = s.scalar(select(func.count()).select_from(Holding))
+        if not positions and existing_count > 0:
+            logger.warning(
+                f"Alpaca returned 0 positions but DB has {existing_count} holdings — "
+                "skipping rebuild (network hiccup guard). "
+                "의도적으로 전량 매도했다면 다시 동기화를 실행하세요."
+            )
+            return get_all_holdings()
         s.execute(delete(Holding))
         for pos in positions:
             s.add(
@@ -189,6 +207,7 @@ def add_trade_log(
     filled_price: float | None = None,
     alpaca_id: str | None = None,
     ai_reasoning: str | None = None,
+    avg_cost_snapshot: float | None = None,
 ) -> dict:
     with get_session() as s:
         log = TradeLog(
@@ -202,6 +221,7 @@ def add_trade_log(
             filled_price=filled_price,
             alpaca_id=alpaca_id,
             ai_reasoning=ai_reasoning,
+            avg_cost_snapshot=avg_cost_snapshot,
         )
         s.add(log)
         s.flush()

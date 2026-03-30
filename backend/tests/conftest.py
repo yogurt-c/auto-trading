@@ -17,7 +17,10 @@ from app.infrastructure.database import init_db
 
 @pytest.fixture(scope="session", autouse=True)
 def _init_db():
-    """Run Alembic migrations once for the entire test session."""
+    """Drop and re-create test DB, then run Alembic migrations."""
+    db_path = os.environ.get("DB_PATH", "tests/data/test.db")
+    if os.path.exists(db_path):
+        os.remove(db_path)
     init_db()
 
 

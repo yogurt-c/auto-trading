@@ -59,32 +59,44 @@ def _job() -> None:
         if synced:
             logger.info(f"pending orders synced: {synced} updated")
     except Exception as e:
-        logger.warning(f"pre-job Alpaca sync failed: {e}")
-
-    run = add_scheduler_run()  # status='running'
-    try:
-        active = get_strategies(status="active")
-        ids = [s["id"] for s in active]
-        logger.info(f"trade executor started — {len(ids)} active strategies")
-        summary = run_trade_executor()
-
-        update_strategies_last_checked(ids)
-        update_scheduler_run(
-            run["id"],
-            finished_at=now_kst(),
-            status="success",
-            strategies_checked=len(ids),
-            summary=summary,
-        )
-        logger.info(f"trade executor completed — run_id={run['id']}, strategies={len(ids)}")
-    except Exception as e:
-        logger.error(f"trade executor failed: {e}")
+        logger.warning(f"pre-job Alpaca sync failed — job aborted: {e}")
+        run = add_scheduler_run()
         update_scheduler_run(
             run["id"],
             finished_at=now_kst(),
             status="failed",
-            error_message=str(e),
+            error_message=f"pre-sync failed: {e}",
         )
+        return
+
+    run = add_scheduler_run()  # status='running'
+    ids: list[int] = []
+    success = False
+    summary_text: str | None = None
+    error_msg: str | None = None
+    try:
+        active = get_strategies(status="active")
+        ids = [s["id"] for s in active]
+        logger.info(f"trade executor started — {len(ids)} active strategies")
+        summary_text = run_trade_executor()
+        update_strategies_last_checked(ids)
+        success = True
+        logger.info(f"trade executor completed — run_id={run['id']}, strategies={len(ids)}")
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"trade executor failed: {e}")
+    finally:
+        try:
+            update_scheduler_run(
+                run["id"],
+                finished_at=now_kst(),
+                status="success" if success else "failed",
+                strategies_checked=len(ids) if success else 0,
+                summary=summary_text,
+                error_message=error_msg,
+            )
+        except Exception as upd_err:
+            logger.error(f"failed to update scheduler_run {run['id']}: {upd_err}")
 
 
 def ensure_started() -> None:

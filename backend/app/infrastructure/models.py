@@ -87,6 +87,7 @@ class TradeLog(DictMixin, Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     alpaca_id: Mapped[str | None] = mapped_column(String, nullable=True)
     ai_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avg_cost_snapshot: Mapped[float | None] = mapped_column(Float, nullable=True)
     executed_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
 
     strategy: Mapped[Strategy | None] = relationship("Strategy", back_populates="trade_logs")

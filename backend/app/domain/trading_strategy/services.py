@@ -239,7 +239,7 @@ class DcaScheduleChecker:
 
         Args:
             strategy: strategy dict from DB
-            now: current time (defaults to UTC now; injectable for testing)
+            now: current time (defaults to KST now; injectable for testing)
 
         Returns:
             dict with is_due, reason, days_since_last, dca_frequency_days

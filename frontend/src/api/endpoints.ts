@@ -155,6 +155,7 @@ export const tradingApi = {
         price: l.filled_price ?? l.limit_price ?? null,
         status: l.status,
         error_message: l.status === 'failed' ? (l.ai_reasoning ?? null) : null,
+        avg_cost_snapshot: l.avg_cost_snapshot ?? null,
         executed_at: l.executed_at,
       })),
       total: r.data.total ?? 0,

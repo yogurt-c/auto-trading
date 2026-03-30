@@ -67,7 +67,7 @@ def test_string_last_triggered(checker):
 
 
 def test_naive_datetime(checker):
-    """timezone-naive last_triggered_at → UTC로 처리."""
+    """timezone-naive last_triggered_at → KST로 처리."""
     now = datetime.now(UTC)
     last_naive = (now - timedelta(days=10)).replace(tzinfo=None)
     result = checker.is_due(

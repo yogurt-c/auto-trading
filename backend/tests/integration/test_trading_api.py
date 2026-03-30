@@ -257,12 +257,20 @@ def test_place_limit_order_captures_filled_price(auth_client):
         "limit_price": 145.0,
         "filled_avg_price": 144.8,
     }
-    _patch_order = patch("app.application.tools.alpaca_client.place_order", return_value=_mock_order)
+    _patch_order = patch(
+        "app.application.tools.alpaca_client.place_order", return_value=_mock_order
+    )
     _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
     with _patch_order, _patch_sync:
         resp = auth_client.post(
             "/api/trading/orders",
-            json={"ticker": "AAPL", "side": "buy", "qty": 1.0, "order_type": "limit", "limit_price": 145.0},
+            json={
+                "ticker": "AAPL",
+                "side": "buy",
+                "qty": 1.0,
+                "order_type": "limit",
+                "limit_price": 145.0,
+            },
         )
     assert resp.status_code == 200
     data = resp.json()
@@ -278,8 +286,12 @@ def test_place_limit_order_captures_filled_price(auth_client):
 
 def test_place_order_with_strategy_id(auth_client):
     """POST /api/trading/orders → strategy_id 포함 주문."""
+    _mock_strategy_order = {
+        **_MOCK_ORDER,
+        "alpaca_id": "test-order-strategy-id-999",
+    }
     _patch_order = patch(
-        "app.application.tools.alpaca_client.place_order", return_value=_MOCK_ORDER
+        "app.application.tools.alpaca_client.place_order", return_value=_mock_strategy_order
     )
     _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
     with _patch_order, _patch_sync:
@@ -298,3 +310,118 @@ def test_place_order_with_strategy_id(auth_client):
     assert data["success"] is True
     assert data["order"]["ticker"] == "AAPL"
     assert "holdings_synced" in data
+
+
+@pytest.mark.usefixtures("_init_db")
+def test_rebuild_holdings_empty_positions_guard():
+    """rebuild_holdings_from_alpaca: Alpaca가 0 positions 반환 시 기존 holdings 보존."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import Holding as HoldingModel
+
+    # 보유 종목 직접 생성
+    db.upsert_holding("GUARDTEST", 10.0, 50.0)
+    try:
+        # Alpaca 0 positions → guard 발동, holdings 유지
+        result = db.rebuild_holdings_from_alpaca([])
+        tickers = [h["ticker"] for h in result]
+        assert "GUARDTEST" in tickers, "빈 positions 시 기존 holdings가 유지되어야 한다"
+    finally:
+        with get_session() as s:
+            s.execute(sa_delete(HoldingModel).where(HoldingModel.ticker == "GUARDTEST"))
+
+
+@pytest.mark.usefixtures("_init_db")
+def test_sync_pending_orders_sell_creates_realized_trade():
+    """sync_pending_orders → 매도 주문 체결 시 realized_trade 생성."""
+    from unittest.mock import patch
+
+    from sqlalchemy import delete as sa_delete
+
+    from app.application.tools import sync_pending_orders
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import RealizedTrade as RealizedTradeModel
+    from app.infrastructure.models import TradeLog as TradeLogModel
+
+    log = db.add_trade_log(
+        ticker="SELLTEST",
+        side="sell",
+        qty=2.0,
+        order_type="market",
+        status="partially_filled",
+        alpaca_id="sell-partial-uuid-deferred",
+        avg_cost_snapshot=100.0,
+    )
+    try:
+        with patch(
+            "app.application.tools.alpaca_client.get_order",
+            return_value={
+                "alpaca_id": "sell-partial-uuid-deferred",
+                "status": "filled",
+                "filled_avg_price": 120.0,
+            },
+        ):
+            updated = sync_pending_orders()
+
+        assert updated >= 1
+        realized = db.get_realized_trades("2000-01-01", "2099-12-31")
+        our = [r for r in realized if r["trade_log_id"] == log["id"]]
+        assert len(our) == 1
+        assert our[0]["realized_pnl"] == pytest.approx((120.0 - 100.0) * 2.0)
+        assert our[0]["sell_price"] == pytest.approx(120.0)
+        assert our[0]["avg_cost"] == pytest.approx(100.0)
+    finally:
+        with get_session() as s:
+            s.execute(
+                sa_delete(RealizedTradeModel).where(RealizedTradeModel.trade_log_id == log["id"])
+            )
+            s.execute(sa_delete(TradeLogModel).where(TradeLogModel.id == log["id"]))
+
+
+def test_place_order_filled_price_zero_no_realized_trade(auth_client):
+    """place_order: filled_price=0이면 realized_trade가 생성되지 않는다."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import RealizedTrade as RealizedTradeModel
+    from app.infrastructure.models import TradeLog as TradeLogModel
+
+    # 보유 종목 생성 (avg_cost is not None)
+    db.upsert_holding("ZPTEST", 5.0, 100.0)
+    try:
+        _mock_order = {
+            "alpaca_id": "sell-zero-price-uuid",
+            "ticker": "ZPTEST",
+            "side": "sell",
+            "qty": 1.0,
+            "order_type": "market",
+            "status": "filled",
+            "limit_price": None,
+            "filled_avg_price": 0,
+        }
+        with (
+            patch("app.application.tools.alpaca_client.place_order", return_value=_mock_order),
+            patch("app.application.tools.alpaca_client.sync_positions", return_value=[]),
+        ):
+            resp = auth_client.post(
+                "/api/trading/orders",
+                json={"ticker": "ZPTEST", "side": "sell", "qty": 1.0},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+
+        # realized_trade 미생성 확인 (sell_price=0인 레코드 없어야 함)
+        realized = db.get_realized_trades("2000-01-01", "2099-12-31")
+        zero_trades = [
+            r for r in realized if r["ticker"] == "ZPTEST" and r["sell_price"] == pytest.approx(0.0)
+        ]
+        assert len(zero_trades) == 0
+    finally:
+        with get_session() as s:
+            s.execute(sa_delete(RealizedTradeModel).where(RealizedTradeModel.ticker == "ZPTEST"))
+            s.execute(sa_delete(TradeLogModel).where(TradeLogModel.ticker == "ZPTEST"))
+        db.remove_holding("ZPTEST")
