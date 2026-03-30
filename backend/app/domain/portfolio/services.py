@@ -107,7 +107,7 @@ class RealizedPnlAggregator:
         # --- by_period ---
         period_buckets: dict[str, list[RealizedTradeVO]] = {}
         for t in trades:
-            key = t.executed_at[:7] if group_by == "month" else t.executed_at[:10]
+            key = t.executed_at.strftime("%Y-%m") if group_by == "month" else t.executed_at.strftime("%Y-%m-%d")
             period_buckets.setdefault(key, []).append(t)
 
         by_period = [

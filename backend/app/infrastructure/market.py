@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import yfinance as yf
 
 # yfinance 캐시를 /tmp로 분리해 앱 DB와 충돌 방지
@@ -29,7 +30,13 @@ def get_current_prices(tickers: list[str]) -> dict[str, float]:
     if len(tickers) == 1:
         ticker = tickers[0]
         if not data.empty:
-            prices[ticker] = float(data["Close"].iloc[-1])
+            close = data["Close"]
+            # yfinance 2.x returns a DataFrame even for a single ticker
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            val = close.dropna()
+            if not val.empty:
+                prices[ticker] = float(val.iloc[-1])
     else:
         for ticker in tickers:
             try:

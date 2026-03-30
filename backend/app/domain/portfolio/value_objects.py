@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -61,7 +63,7 @@ class RealizedTradeVO(BaseModel):
     realized_pnl_pct: float
     strategy_id: int | None
     strategy_name: str | None
-    executed_at: str
+    executed_at: datetime
 
 
 class PeriodPnl(BaseModel):
