@@ -168,6 +168,83 @@ def test_get_trade_logs_offset_beyond_total(auth_client):
     assert data["total"] == total
 
 
+def test_sync_pending_orders_updates_status(db_partially_filled_log):
+    """sync_pending_orders → Alpaca에서 filled 반환 시 DB 상태 업데이트."""
+    from unittest.mock import patch
+
+    from app.application.tools import sync_pending_orders
+    from app.infrastructure import repository as db
+
+    with patch(
+        "app.application.tools.alpaca_client.get_order",
+        return_value={
+            "alpaca_id": "partial-order-uuid-001",
+            "status": "filled",
+            "filled_avg_price": 200.0,
+            "filled_qty": 5.0,
+        },
+    ):
+        updated = sync_pending_orders()
+
+    assert updated >= 1
+    logs = db.get_trade_logs(limit=100, offset=0)
+    synced = next((lg for lg in logs if lg["id"] == db_partially_filled_log["id"]), None)
+    assert synced is not None
+    assert synced["status"] == "filled"
+    assert synced["filled_price"] == pytest.approx(200.0)
+
+
+def test_sync_pending_orders_skips_still_partial(db_partially_filled_log):
+    """sync_pending_orders → Alpaca에서 여전히 partially_filled 반환 시 DB 변경 없음."""
+    from unittest.mock import patch
+
+    from app.application.tools import sync_pending_orders
+    from app.infrastructure import repository as db
+
+    with patch(
+        "app.application.tools.alpaca_client.get_order",
+        return_value={
+            "alpaca_id": "partial-order-uuid-001",
+            "status": "partially_filled",
+            "filled_avg_price": None,
+            "filled_qty": 2.0,
+        },
+    ):
+        updated = sync_pending_orders()
+
+    assert updated == 0
+    logs = db.get_trade_logs(limit=100, offset=0)
+    synced = next((lg for lg in logs if lg["id"] == db_partially_filled_log["id"]), None)
+    assert synced["status"] == "partially_filled"
+
+
+def test_get_partially_filled_logs(db_partially_filled_log):
+    """get_partially_filled_logs → partially_filled + alpaca_id 있는 레코드만 반환."""
+    from app.infrastructure import repository as db
+
+    logs = db.get_partially_filled_logs()
+    ids = [lg["id"] for lg in logs]
+    assert db_partially_filled_log["id"] in ids
+    for lg in logs:
+        assert lg["status"] == "partially_filled"
+        assert lg["alpaca_id"] is not None
+
+
+def test_update_trade_log_status(db_partially_filled_log):
+    """update_trade_log_status → status·filled_price 업데이트."""
+    from app.infrastructure import repository as db
+
+    db.update_trade_log_status(
+        db_partially_filled_log["id"],
+        status="filled",
+        filled_price=175.5,
+    )
+    logs = db.get_trade_logs(limit=100, offset=0)
+    updated = next((lg for lg in logs if lg["id"] == db_partially_filled_log["id"]), None)
+    assert updated["status"] == "filled"
+    assert updated["filled_price"] == pytest.approx(175.5)
+
+
 def test_place_order_with_strategy_id(auth_client):
     """POST /api/trading/orders → strategy_id 포함 주문."""
     _patch_order = patch(

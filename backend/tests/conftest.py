@@ -121,6 +121,28 @@ def db_trade_log(_init_db):
 
 
 @pytest.fixture
+def db_partially_filled_log(_init_db):
+    """partially_filled TradeLog를 real DB에 생성하고 teardown에서 제거."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import TradeLog as TradeLogModel
+
+    log = db.add_trade_log(
+        ticker="SYNCTEST",
+        side="buy",
+        qty=5.0,
+        order_type="market",
+        status="partially_filled",
+        alpaca_id="partial-order-uuid-001",
+    )
+    yield log
+    with get_session() as s:
+        s.execute(sa_delete(TradeLogModel).where(TradeLogModel.id == log["id"]))
+
+
+@pytest.fixture
 def db_scheduler_run(_init_db):
     """SchedulerRun을 real DB에 생성하고 teardown에서 제거."""
     from sqlalchemy import delete as sa_delete
