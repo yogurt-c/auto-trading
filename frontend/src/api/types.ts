@@ -61,7 +61,7 @@ export interface TradeLog {
   symbol: string
   action: string
   quantity: number
-  price: number
+  price: number | null
   status: string
   error_message: string | null
   executed_at: string
