@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.api.deps import get_current_user
 from app.application.tools import get_performance as _get_performance
 from app.domain.portfolio.services import PortfolioValuationService
+from app.domain.portfolio.value_objects import MarketSummary
 from app.infrastructure import kis_client
 from app.infrastructure import repository as db
 from app.infrastructure.market import get_current_prices
@@ -15,12 +16,28 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 _valuation_service = PortfolioValuationService()
 
 
+def _summary_dict(ms: MarketSummary) -> dict:
+    return {
+        "total_market_value": float(ms.total_market_value.amount),
+        "total_cost_basis": float(ms.total_cost_basis.amount),
+        "total_pnl": float(ms.total_pnl.amount),
+        "total_pnl_pct": float(ms.total_pnl_pct),
+        "holding_count": ms.holding_count,
+        "currency": ms.currency,
+    }
+
+
 @router.get("/portfolio")
 def get_portfolio():
-    """전체 holdings + P&L 계산 (현재가 기준)."""
+    """전체 holdings + P&L 계산 (현재가 기준). KR/US 분리 summary 반환."""
     holdings = db.get_all_holdings()
     if not holdings:
-        return {"holdings": [], "summary": {}, "failed_tickers": [], "count": 0}
+        return {
+            "holdings": [],
+            "summary": {"kr": None, "us": None},
+            "failed_tickers": [],
+            "count": 0,
+        }
 
     tickers = [h["ticker"] for h in holdings]
     prices = get_current_prices(tickers)
@@ -38,6 +55,8 @@ def get_portfolio():
             "cost_basis": float(hv.cost_basis.amount),
             "pnl": float(hv.pnl.amount),
             "pnl_pct": float(hv.pnl_pct),
+            "market": hv.market,
+            "currency": hv.currency,
         }
         for hv in snapshot.holdings
     ]
@@ -45,10 +64,8 @@ def get_portfolio():
     return {
         "holdings": holding_list,
         "summary": {
-            "total_market_value": float(snapshot.total_market_value.amount),
-            "total_cost_basis": float(snapshot.total_cost_basis.amount),
-            "total_pnl": float(snapshot.total_pnl.amount),
-            "total_pnl_pct": float(snapshot.total_pnl_pct),
+            "kr": _summary_dict(snapshot.kr) if snapshot.kr else None,
+            "us": _summary_dict(snapshot.us) if snapshot.us else None,
         },
         "failed_tickers": failed_tickers,
         "count": len(holdings),
@@ -82,14 +99,17 @@ def get_holdings():
 
 @router.get("/portfolio/transactions")
 def get_transactions(limit: int = Query(50, ge=1, le=500)):
-    """KIS 체결 주문 이력 반환."""
+    """KIS 체결 주문 이력 반환. 국내 전용이므로 currency='KRW' 주입."""
     try:
         txns = kis_client.get_filled_orders(limit=limit)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"KIS 주문 이력 조회 실패: {e!s}")
-    return {"transactions": txns, "count": len(txns)}
+
+    # get_filled_orders()는 국내(KRW) 전용 — currency 명시
+    txns_with_currency = [{"currency": "KRW", **t} for t in txns]
+    return {"transactions": txns_with_currency, "count": len(txns)}
 
 
 @router.get("/portfolio/performance")

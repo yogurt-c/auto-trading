@@ -11,17 +11,28 @@ from loguru import logger
 
 from app.infrastructure.timezone import now_kst
 
+_KST = ZoneInfo("Asia/Seoul")
 _ET = ZoneInfo("America/New_York")
-_MARKET_OPEN = time(9, 30)
-_MARKET_CLOSE = time(16, 0)
+
+_KRX_OPEN = time(9, 0)
+_KRX_CLOSE = time(15, 30)
+_NYSE_OPEN = time(9, 30)
+_NYSE_CLOSE = time(16, 0)
 
 
 def _is_market_open() -> bool:
-    """NYSE 장 시간 여부 확인 (평일 09:30~16:00 ET)."""
-    now = datetime.now(_ET)
-    if now.weekday() >= 5:  # 토(5)·일(6) 제외
-        return False
-    return _MARKET_OPEN <= now.time() < _MARKET_CLOSE
+    """KRX(한국) 또는 NYSE(미국) 장 시간 여부 확인.
+
+    KRX: 평일 09:00~15:30 KST
+    NYSE: 평일 09:30~16:00 ET
+    """
+    now_kst_dt = datetime.now(_KST)
+    now_et = datetime.now(_ET)
+
+    krx_open = now_kst_dt.weekday() < 5 and _KRX_OPEN <= now_kst_dt.time() < _KRX_CLOSE
+    nyse_open = now_et.weekday() < 5 and _NYSE_OPEN <= now_et.time() < _NYSE_CLOSE
+
+    return krx_open or nyse_open
 
 
 _scheduler: BackgroundScheduler | None = None

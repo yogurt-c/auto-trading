@@ -8,7 +8,8 @@ import {
 import { portfolioApi } from '../api/endpoints'
 import MetricCard from '../components/MetricCard'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
-import { fmt } from '../lib/format'
+import { fmtCurrency } from '../lib/format'
+import type { Currency } from '../api/types'
 
 const CHART_COLORS = [
   '#6c7cff', '#34d399', '#fbbf24', '#f87171', '#a78bfa',
@@ -26,26 +27,34 @@ export default function Dashboard() {
 
   const holdings = data?.holdings ?? []
   const summary = data?.summary
-  const fetchErrors = data?.fetch_errors ?? []
+  const fetchErrors = data?.failed_tickers ?? []
 
-  // 수동 가격 재계산용
+  // 수동 가격 재계산
   const effectiveHoldings = holdings.map(h => {
-    const manual = manualPrices[h.symbol]
+    const manual = manualPrices[h.ticker]
     if (!manual || isNaN(parseFloat(manual))) return h
     const price = parseFloat(manual)
-    const mv = price * h.quantity
-    const pnl = mv - h.avg_cost * h.quantity
-    const pnlPct = h.avg_cost > 0 ? (pnl / (h.avg_cost * h.quantity)) * 100 : 0
-    return { ...h, current_price: price, market_value: mv, unrealized_pnl: pnl, unrealized_pnl_pct: pnlPct }
+    const mv = price * h.shares
+    const pnl = mv - h.avg_price * h.shares
+    const pnlPct = h.avg_price > 0 ? (pnl / (h.avg_price * h.shares)) * 100 : 0
+    return { ...h, current_price: price, market_value: mv, pnl, pnl_pct: pnlPct }
   })
 
-  const pieData = effectiveHoldings
+  // 국내 / 해외 분리
+  const krHoldings = effectiveHoldings.filter(h => h.market === 'KR')
+  const usHoldings = effectiveHoldings.filter(h => h.market !== 'KR')
+
+  const krPieData = krHoldings
     .filter(h => h.market_value != null && h.market_value > 0)
-    .map(h => ({ name: h.symbol, value: h.market_value! }))
+    .map(h => ({ name: h.ticker, value: h.market_value! }))
+
+  const usPieData = usHoldings
+    .filter(h => h.market_value != null && h.market_value > 0)
+    .map(h => ({ name: h.ticker, value: h.market_value! }))
 
   const barData = effectiveHoldings
-    .filter(h => h.unrealized_pnl_pct != null)
-    .map(h => ({ symbol: h.symbol, return: parseFloat((h.unrealized_pnl_pct ?? 0).toFixed(2)) }))
+    .filter(h => h.pnl_pct != null)
+    .map(h => ({ symbol: h.ticker, return: parseFloat((h.pnl_pct ?? 0).toFixed(2)) }))
     .sort((a, b) => b.return - a.return)
 
   return (
@@ -63,28 +72,71 @@ export default function Dashboard() {
         </ErrorBanner>
       )}
 
-      {/* 요약 메트릭 */}
-      <MetricGrid>
-        <MetricCard
-          title="Market Value"
-          value={fmt(summary?.total_market_value, 2, '$')}
-        />
-        <MetricCard
-          title="Cost Basis"
-          value={fmt(summary?.total_cost_basis, 2, '$')}
-        />
-        <MetricCard
-          title="Unrealized P&L"
-          value={fmt(summary?.total_unrealized_pnl, 2, summary && summary.total_unrealized_pnl >= 0 ? '+$' : '$')}
-          delta={summary?.total_unrealized_pnl_pct ?? null}
-        />
-        <MetricCard
-          title="보유 종목"
-          value={summary?.holding_count ?? '—'}
-        />
-      </MetricGrid>
+      {/* 국내 포트폴리오 (KRW) */}
+      {summary?.kr && (
+        <Section>
+          <SectionTitle>국내 포트폴리오 (KRW)</SectionTitle>
+          <MetricGrid>
+            <MetricCard
+              title="Market Value"
+              value={fmtCurrency(summary.kr.total_market_value, 'KRW')}
+            />
+            <MetricCard
+              title="Cost Basis"
+              value={fmtCurrency(summary.kr.total_cost_basis, 'KRW')}
+            />
+            <MetricCard
+              title="Unrealized P&L"
+              value={fmtCurrency(summary.kr.total_pnl, 'KRW', summary.kr.total_pnl >= 0)}
+              delta={summary.kr.total_pnl_pct}
+            />
+            <MetricCard
+              title="보유 종목"
+              value={summary.kr.holding_count}
+            />
+          </MetricGrid>
+        </Section>
+      )}
 
-      {/* 가격 미수신 종목 수동 입력 */}
+      {/* 해외 포트폴리오 (USD) */}
+      {summary?.us && (
+        <Section>
+          <SectionTitle>해외 포트폴리오 (USD)</SectionTitle>
+          <MetricGrid>
+            <MetricCard
+              title="Market Value"
+              value={fmtCurrency(summary.us.total_market_value, 'USD')}
+            />
+            <MetricCard
+              title="Cost Basis"
+              value={fmtCurrency(summary.us.total_cost_basis, 'USD')}
+            />
+            <MetricCard
+              title="Unrealized P&L"
+              value={fmtCurrency(summary.us.total_pnl, 'USD', summary.us.total_pnl >= 0)}
+              delta={summary.us.total_pnl_pct}
+            />
+            <MetricCard
+              title="보유 종목"
+              value={summary.us.holding_count}
+            />
+          </MetricGrid>
+        </Section>
+      )}
+
+      {/* 데이터 없을 때 빈 상태 */}
+      {!summary?.kr && !summary?.us && !isLoading && (
+        <Section>
+          <MetricGrid>
+            <MetricCard title="Market Value" value="—" />
+            <MetricCard title="Cost Basis" value="—" />
+            <MetricCard title="Unrealized P&L" value="—" />
+            <MetricCard title="보유 종목" value="—" />
+          </MetricGrid>
+        </Section>
+      )}
+
+      {/* 수동 가격 입력 */}
       {fetchErrors.length > 0 && (
         <Section>
           <SectionTitle>수동 가격 입력 필요</SectionTitle>
@@ -108,28 +160,43 @@ export default function Dashboard() {
 
       {/* 차트 */}
       <ChartGrid>
-        <ChartCard>
-          <SectionTitle>자산 배분</SectionTitle>
-          {pieData.length > 0 ? (
+        {krPieData.length > 0 && (
+          <ChartCard>
+            <SectionTitle>국내 자산 배분</SectionTitle>
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
-                  {pieData.map((_, i) => (
+                <Pie data={krPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                  {krPieData.map((_, i) => (
                     <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number) => `$${v.toLocaleString()}`} />
+                <Tooltip formatter={(v: number) => fmtCurrency(v, 'KRW')} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
-          ) : (
-            <Empty>보유 종목 없음</Empty>
-          )}
-        </ChartCard>
+          </ChartCard>
+        )}
 
-        <ChartCard>
-          <SectionTitle>종목별 수익률 (%)</SectionTitle>
-          {barData.length > 0 ? (
+        {usPieData.length > 0 && (
+          <ChartCard>
+            <SectionTitle>해외 자산 배분</SectionTitle>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={usPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                  {usPieData.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v: number) => fmtCurrency(v, 'USD')} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        )}
+
+        {barData.length > 0 && (
+          <ChartCard>
+            <SectionTitle>종목별 수익률 (%)</SectionTitle>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={barData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
@@ -151,10 +218,8 @@ export default function Dashboard() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          ) : (
-            <Empty>수익률 데이터 없음</Empty>
-          )}
-        </ChartCard>
+          </ChartCard>
+        )}
       </ChartGrid>
     </Page>
   )
@@ -204,13 +269,6 @@ const ErrorBanner = styled.div`
   margin-bottom: ${spacing.lg};
 `
 
-const MetricGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: ${spacing.md};
-  margin-bottom: ${spacing.xl};
-`
-
 const Section = styled.div`
   margin-bottom: ${spacing.xl};
 `
@@ -220,6 +278,12 @@ const SectionTitle = styled.h2`
   font-weight: 600;
   color: ${colors.text};
   margin: 0 0 ${spacing.md};
+`
+
+const MetricGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: ${spacing.md};
 `
 
 const ManualGrid = styled.div`
@@ -266,13 +330,4 @@ const ChartCard = styled.div`
   border-radius: ${radius.md};
   padding: ${spacing.lg};
   box-shadow: ${shadow.sm};
-`
-
-const Empty = styled.div`
-  height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: ${colors.textDim};
-  font-size: ${fontSize.sm};
 `

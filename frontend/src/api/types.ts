@@ -1,45 +1,52 @@
 // ── Portfolio ──────────────────────────────────────────────────────────────
 
+export type Market = 'KR' | 'US'
+export type Currency = 'KRW' | 'USD'
+
 export interface Holding {
-  symbol: string
-  quantity: number
-  avg_cost: number
+  ticker: string
+  shares: number
+  avg_price: number
   current_price: number | null
   market_value: number | null
-  unrealized_pnl: number | null
-  unrealized_pnl_pct: number | null
+  pnl: number | null
+  pnl_pct: number | null
+  market: Market
+  currency: Currency
 }
 
 export interface Transaction {
   id: string
-  symbol: string
-  transaction_type: 'BUY' | 'SELL'
-  quantity: number
+  ticker: string
+  action: 'buy' | 'sell'
+  shares: number
   price: number
-  total_amount: number
-  transaction_date: string
-  notes: string | null
+  total: number
+  executed_at: string
+  currency: Currency
 }
 
-export interface PortfolioSummary {
+export interface MarketSummary {
   total_market_value: number
   total_cost_basis: number
-  total_unrealized_pnl: number
-  total_unrealized_pnl_pct: number
+  total_pnl: number
+  total_pnl_pct: number
   holding_count: number
+  currency: Currency
 }
 
 export interface PortfolioResponse {
   holdings: Holding[]
-  summary: PortfolioSummary
-  fetch_errors: string[]
+  summary: {
+    kr: MarketSummary | null
+    us: MarketSummary | null
+  }
+  failed_tickers: string[]
 }
 
 // ── Strategies ─────────────────────────────────────────────────────────────
 
 export type StrategyStatus = 'active' | 'paused' | 'completed'
-export type Market = 'KR' | 'US'
-export type Currency = 'KRW' | 'USD'
 
 export interface Strategy {
   id: number
@@ -70,40 +77,40 @@ export interface Strategy {
 export interface TradeLog {
   id: number
   strategy_id: number | null
-  symbol: string
-  action: string
-  quantity: number
-  price: number | null
+  ticker: string
+  side: string
+  qty: number
+  order_type: string
+  limit_price: number | null
+  filled_price: number | null
   status: string
-  error_message: string | null
+  broker_order_id: string | null
+  market: Market
+  currency: Currency
+  ai_reasoning: string | null
   avg_cost_snapshot: number | null
   executed_at: string
 }
 
 export interface AccountInfo {
-  buying_power: number
-  portfolio_value: number
   cash: number
-  equity: number
-  last_equity: number
-  long_market_value: number
-  short_market_value: number
-  initial_margin: number
-  maintenance_margin: number
-  daytrade_count: number
+  portfolio_value: number
+  buying_power: number
   currency: string
   status: string
+  is_paper: boolean
 }
 
 export interface Position {
-  symbol: string
+  ticker: string
   qty: number
   avg_entry_price: number
+  current_price: number
   market_value: number
   unrealized_pl: number
   unrealized_plpc: number
-  current_price: number
-  side: string
+  market: Market
+  currency: Currency
 }
 
 // ── Scheduler ──────────────────────────────────────────────────────────────
@@ -119,8 +126,8 @@ export interface SchedulerRun {
   started_at: string
   finished_at: string | null
   status: string
-  strategies_run: number
-  trades_executed: number
+  strategies_checked: number
+  orders_placed: number
   error_message: string | null
   summary: string | null
 }
@@ -156,6 +163,7 @@ export interface RealizedTrade {
   avg_cost: number
   realized_pnl: number
   realized_pnl_pct: number
+  currency: Currency
   strategy_id: number | null
   strategy_name: string | null
   executed_at: string

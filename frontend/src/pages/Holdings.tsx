@@ -1,60 +1,66 @@
 import styled from '@emotion/styled'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { portfolioApi } from '../api/endpoints'
+import { portfolioApi, tradingApi } from '../api/endpoints'
 import DataTable from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import type { Holding, Transaction } from '../api/types'
 import { colors, spacing, fontSize, radius } from '../theme'
-import { fmt } from '../lib/format'
+import { fmtCurrency } from '../lib/format'
 
 const holdingColumns: Column<Holding>[] = [
-  { key: 'symbol', header: 'Symbol' },
-  { key: 'quantity', header: 'Qty', align: 'right' },
-  { key: 'avg_cost', header: 'Avg Cost', align: 'right', render: r => fmt(r.avg_cost, 2, '$') },
-  { key: 'current_price', header: 'Current', align: 'right', render: r => fmt(r.current_price, 2, '$') },
-  { key: 'market_value', header: 'Market Value', align: 'right', render: r => fmt(r.market_value, 2, '$') },
+  { key: 'ticker', header: 'Ticker' },
+  { key: 'market', header: 'Market' },
+  { key: 'shares', header: 'Qty', align: 'right' },
+  { key: 'avg_price', header: 'Avg Price', align: 'right', render: r => fmtCurrency(r.avg_price, r.currency) },
+  { key: 'current_price', header: 'Current', align: 'right', render: r => r.current_price != null ? fmtCurrency(r.current_price, r.currency) : '—' },
+  { key: 'market_value', header: 'Market Value', align: 'right', render: r => r.market_value != null ? fmtCurrency(r.market_value, r.currency) : '—' },
   {
-    key: 'unrealized_pnl',
+    key: 'pnl',
     header: 'P&L',
     align: 'right',
     render: r => {
-      if (r.unrealized_pnl == null) return '—'
-      const color = r.unrealized_pnl >= 0 ? colors.positive : colors.negative
-      return <span style={{ color }}>{fmt(r.unrealized_pnl, 2, r.unrealized_pnl >= 0 ? '+$' : '$')}</span>
+      if (r.pnl == null) return '—'
+      const color = r.pnl >= 0 ? colors.positive : colors.negative
+      return <span style={{ color }}>{fmtCurrency(r.pnl, r.currency, r.pnl >= 0)}</span>
     },
   },
   {
-    key: 'unrealized_pnl_pct',
+    key: 'pnl_pct',
     header: 'P&L %',
     align: 'right',
     render: r => {
-      if (r.unrealized_pnl_pct == null) return '—'
-      const color = r.unrealized_pnl_pct >= 0 ? colors.positive : colors.negative
-      return <span style={{ color }}>{(r.unrealized_pnl_pct >= 0 ? '+' : '') + r.unrealized_pnl_pct.toFixed(2)}%</span>
+      if (r.pnl_pct == null) return '—'
+      const color = r.pnl_pct >= 0 ? colors.positive : colors.negative
+      return <span style={{ color }}>{(r.pnl_pct >= 0 ? '+' : '') + r.pnl_pct.toFixed(2)}%</span>
     },
   },
 ]
 
 const txColumns: Column<Transaction>[] = [
-  { key: 'transaction_date', header: 'Date', render: r => r.transaction_date.slice(0, 10) },
-  { key: 'symbol', header: 'Symbol' },
+  { key: 'executed_at', header: 'Date', render: r => r.executed_at.slice(0, 10) },
+  { key: 'ticker', header: 'Ticker' },
   {
-    key: 'transaction_type',
+    key: 'action',
     header: 'Type',
     render: r => (
-      <span style={{ color: r.transaction_type === 'BUY' ? colors.positive : colors.negative, fontWeight: 600 }}>
-        {r.transaction_type}
+      <span style={{ color: r.action === 'buy' ? colors.positive : colors.negative, fontWeight: 600 }}>
+        {r.action.toUpperCase()}
       </span>
     ),
   },
-  { key: 'quantity', header: 'Qty', align: 'right' },
-  { key: 'price', header: 'Price', align: 'right', render: r => fmt(r.price, 2, '$') },
-  { key: 'total_amount', header: 'Total', align: 'right', render: r => fmt(r.total_amount, 2, '$') },
-  { key: 'notes', header: 'Notes', render: r => r.notes ?? '' },
+  { key: 'shares', header: 'Qty', align: 'right' },
+  { key: 'price', header: 'Price', align: 'right', render: r => fmtCurrency(r.price, r.currency) },
+  { key: 'total', header: 'Total', align: 'right', render: r => fmtCurrency(r.total, r.currency) },
 ]
 
 export default function Holdings() {
   const qc = useQueryClient()
+
+  const { data: account } = useQuery({
+    queryKey: ['account'],
+    queryFn: tradingApi.account,
+    staleTime: 60_000,
+  })
 
   const { data: holdings, isLoading: holdingsLoading } = useQuery({
     queryKey: ['holdings'],
@@ -84,17 +90,23 @@ export default function Holdings() {
           onClick={() => syncMutation.mutate()}
           disabled={syncMutation.isPending}
         >
-          {syncMutation.isPending ? '동기화 중...' : 'Alpaca 동기화'}
+          {syncMutation.isPending ? '동기화 중...' : 'KIS 동기화'}
         </SyncBtn>
       </Header>
 
+      {account?.is_paper && (
+        <Banner type="info">
+          모의투자 모드 — 실제 자금을 사용하지 않습니다. 국내 및 해외(미국) 주식 모두 지원됩니다.
+        </Banner>
+      )}
+
       {syncMutation.isSuccess && (
-        <Banner success>
+        <Banner type="success">
           동기화 완료 — {syncMutation.data?.synced ?? 0}개 포지션 업데이트됨
         </Banner>
       )}
       {syncMutation.isError && (
-        <Banner success={false}>
+        <Banner type="error">
           동기화 실패: {String(syncMutation.error)}
         </Banner>
       )}
@@ -111,7 +123,7 @@ export default function Holdings() {
       <Section>
         <SectionTitle>최근 거래내역 {txLoading ? '(로딩 중...)' : `(${transactions?.length ?? 0})`}</SectionTitle>
         {txError ? (
-          <Banner success={false}>Alpaca 주문 이력 조회 실패 — Settings 페이지에서 API 키를 확인해 주세요.</Banner>
+          <Banner type="error">KIS 주문 이력 조회 실패 — Settings 페이지에서 API 키를 확인해 주세요.</Banner>
         ) : (
           <DataTable<Transaction>
             columns={txColumns}
@@ -155,14 +167,20 @@ const SyncBtn = styled.button`
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 `
 
-const Banner = styled.div<{ success: boolean }>`
+const bannerColor = {
+  success: colors.success,
+  error: colors.danger,
+  info: colors.primary,
+}
+
+const Banner = styled.div<{ type: 'success' | 'error' | 'info' }>`
   padding: ${spacing.md};
   border-radius: ${radius.sm};
   font-size: ${fontSize.sm};
   margin-bottom: ${spacing.lg};
-  background: ${({ success }) => (success ? colors.success : colors.danger)}22;
-  border: 1px solid ${({ success }) => (success ? colors.success : colors.danger)}44;
-  color: ${({ success }) => (success ? colors.success : colors.danger)};
+  background: ${({ type }) => bannerColor[type]}22;
+  border: 1px solid ${({ type }) => bannerColor[type]}44;
+  color: ${({ type }) => bannerColor[type]};
 `
 
 const Section = styled.div`

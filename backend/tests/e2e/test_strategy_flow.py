@@ -97,10 +97,11 @@ def test_portfolio_e2e_with_mock_prices(auth_client):
 
     # AAPL: (180-150)*5 = 150 profit
     # MSFT: (350-300)*2 = 100 profit → total = 250
-    summary = data["summary"]
-    assert summary["total_pnl"] == pytest.approx(250.0)
-    assert summary["total_market_value"] == pytest.approx(5 * 180.0 + 2 * 350.0)
-    assert summary["total_cost_basis"] == pytest.approx(1350.0)  # 5*150 + 2*300
+    # holdings에 market/currency 없으면 기본값 US/USD → summary["us"]에 집계
+    us_summary = data["summary"]["us"]
+    assert us_summary["total_pnl"] == pytest.approx(250.0)
+    assert us_summary["total_market_value"] == pytest.approx(5 * 180.0 + 2 * 350.0)
+    assert us_summary["total_cost_basis"] == pytest.approx(1350.0)  # 5*150 + 2*300
 
     aapl_h = next(h for h in data["holdings"] if h["ticker"] == "AAPL")
     msft_h = next(h for h in data["holdings"] if h["ticker"] == "MSFT")

@@ -12,7 +12,15 @@ from dataclasses import dataclass
 from loguru import logger
 from sqlalchemy import select
 
-REQUIRED_KEYS = ("ANTHROPIC_API_KEY", "KIS_APP_KEY", "KIS_APP_SECRET", "KIS_ACCOUNT_NO")
+REQUIRED_KEYS = (
+    "ANTHROPIC_API_KEY",
+    "KIS_PAPER_APP_KEY",
+    "KIS_PAPER_APP_SECRET",
+    "KIS_PAPER_ACCOUNT_NO",
+    "KIS_REAL_APP_KEY",
+    "KIS_REAL_APP_SECRET",
+    "KIS_REAL_ACCOUNT_NO",
+)
 
 _cache: Settings | None = None
 _cache_lock = threading.Lock()
@@ -21,13 +29,29 @@ _cache_lock = threading.Lock()
 @dataclass
 class Settings:
     anthropic_api_key: str = ""
-    kis_app_key: str = ""
-    kis_app_secret: str = ""
-    kis_account_no: str = ""  # 예: "12345678-01"
+    kis_paper_app_key: str = ""
+    kis_paper_app_secret: str = ""
+    kis_paper_account_no: str = ""
+    kis_real_app_key: str = ""
+    kis_real_app_secret: str = ""
+    kis_real_account_no: str = ""
     kis_paper: bool = True  # True = 모의투자, False = 실전
 
     @property
+    def kis_app_key(self) -> str:
+        return self.kis_paper_app_key if self.kis_paper else self.kis_real_app_key
+
+    @property
+    def kis_app_secret(self) -> str:
+        return self.kis_paper_app_secret if self.kis_paper else self.kis_real_app_secret
+
+    @property
+    def kis_account_no(self) -> str:
+        return self.kis_paper_account_no if self.kis_paper else self.kis_real_account_no
+
+    @property
     def is_configured(self) -> bool:
+        """현재 활성 모드에 필요한 키가 모두 설정되었는지 확인."""
         return bool(
             self.anthropic_api_key
             and self.kis_app_key
@@ -37,11 +61,13 @@ class Settings:
 
     @property
     def missing_keys(self) -> list[str]:
+        """현재 활성 모드 기준 미설정 키 목록."""
+        prefix = "KIS_PAPER" if self.kis_paper else "KIS_REAL"
         mapping = {
             "anthropic_api_key": "ANTHROPIC_API_KEY",
-            "kis_app_key": "KIS_APP_KEY",
-            "kis_app_secret": "KIS_APP_SECRET",
-            "kis_account_no": "KIS_ACCOUNT_NO",
+            "kis_app_key": f"{prefix}_APP_KEY",
+            "kis_app_secret": f"{prefix}_APP_SECRET",
+            "kis_account_no": f"{prefix}_ACCOUNT_NO",
         }
         return [label for field, label in mapping.items() if not getattr(self, field)]
 
@@ -56,9 +82,12 @@ def _load_from_db() -> Settings | None:
             data = {r.key.lower(): r.value for r in rows if r.value}
         return Settings(
             anthropic_api_key=data.get("anthropic_api_key", ""),
-            kis_app_key=data.get("kis_app_key", ""),
-            kis_app_secret=data.get("kis_app_secret", ""),
-            kis_account_no=data.get("kis_account_no", ""),
+            kis_paper_app_key=data.get("kis_paper_app_key", ""),
+            kis_paper_app_secret=data.get("kis_paper_app_secret", ""),
+            kis_paper_account_no=data.get("kis_paper_account_no", ""),
+            kis_real_app_key=data.get("kis_real_app_key", ""),
+            kis_real_app_secret=data.get("kis_real_app_secret", ""),
+            kis_real_account_no=data.get("kis_real_account_no", ""),
             kis_paper=data.get("kis_paper", "true").lower() == "true",
         )
     except Exception as e:

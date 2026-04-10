@@ -7,7 +7,7 @@ import {
 import { performanceApi } from '../api/endpoints'
 import MetricCard from '../components/MetricCard'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
-import { fmt } from '../lib/format'
+import { fmt, fmtCurrency } from '../lib/format'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,7 +59,25 @@ export default function Performance() {
     staleTime: 60_000,
   })
 
-  const pnlPositive = (data?.total_realized_pnl ?? 0) >= 0
+  // 통화별 실현손익 집계 (프론트에서 직접 분리)
+  const krPnl = data?.trades.filter(t => t.currency === 'KRW').reduce((s, t) => s + t.realized_pnl, 0) ?? 0
+  const usPnl = data?.trades.filter(t => t.currency === 'USD').reduce((s, t) => s + t.realized_pnl, 0) ?? 0
+  const hasKrTrades = (data?.trades ?? []).some(t => t.currency === 'KRW')
+  const hasUsTrades = (data?.trades ?? []).some(t => t.currency === 'USD')
+
+  // 기간별 손익 차트: KRW / USD 분리 집계
+  const periodKrMap: Record<string, number> = {}
+  const periodUsMap: Record<string, number> = {}
+  for (const t of data?.trades ?? []) {
+    const key = groupBy === 'month'
+      ? t.executed_at.slice(0, 7)
+      : t.executed_at.slice(0, 10)
+    if (t.currency === 'KRW') periodKrMap[key] = (periodKrMap[key] ?? 0) + t.realized_pnl
+    else periodUsMap[key] = (periodUsMap[key] ?? 0) + t.realized_pnl
+  }
+
+  // by_period는 기존 집계(합산) 그대로 사용하되, KRW/USD 혼재 시에는 각각 분리 차트로
+  const periodData = data?.by_period ?? []
 
   return (
     <Page>
@@ -106,11 +124,23 @@ export default function Performance() {
 
       {/* ── Summary Metrics ── */}
       <MetricsRow>
-        <MetricCard
-          title="Realized P&L"
-          value={data ? `${pnlPositive ? '+' : ''}${fmt(data.total_realized_pnl, 2, '$')}` : '—'}
-          subtitle={data ? (pnlPositive ? '수익' : '손실') : undefined}
-        />
+        {data && hasKrTrades && (
+          <MetricCard
+            title="Realized P&L (KRW)"
+            value={fmtCurrency(krPnl, 'KRW', krPnl >= 0)}
+            subtitle={krPnl >= 0 ? '수익' : '손실'}
+          />
+        )}
+        {data && hasUsTrades && (
+          <MetricCard
+            title="Realized P&L (USD)"
+            value={fmtCurrency(usPnl, 'USD', usPnl >= 0)}
+            subtitle={usPnl >= 0 ? '수익' : '손실'}
+          />
+        )}
+        {data && !hasKrTrades && !hasUsTrades && (
+          <MetricCard title="Realized P&L" value="—" />
+        )}
         <MetricCard
           title="거래 수"
           value={data ? String(data.total_trade_count) : '—'}
@@ -128,9 +158,9 @@ export default function Performance() {
       {/* ── Period P&L Bar Chart ── */}
       <Card>
         <CardTitle>기간별 손익</CardTitle>
-        {data && data.by_period.length > 0 ? (
+        {periodData.length > 0 ? (
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data.by_period} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+            <BarChart data={periodData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
               <XAxis
                 dataKey="period"
@@ -142,15 +172,15 @@ export default function Performance() {
                 tick={{ fill: colors.textMuted, fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={v => `$${v}`}
+                tickFormatter={v => v.toLocaleString()}
               />
               <Tooltip
                 contentStyle={{ background: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.md }}
                 labelStyle={{ color: colors.text }}
-                formatter={(value: number) => [`$${fmt(value)}`, 'Realized P&L']}
+                formatter={(value: number) => [value.toLocaleString(), 'Realized P&L']}
               />
               <Bar dataKey="realized_pnl" radius={[4, 4, 0, 0]}>
-                {(data.by_period).map((entry, i) => (
+                {(data?.by_period ?? []).map((entry, i) => (
                   <Cell
                     key={i}
                     fill={entry.realized_pnl >= 0 ? colors.positive : colors.negative}
@@ -185,7 +215,7 @@ export default function Performance() {
                   <tr key={i}>
                     <Td>{s.strategy_name}</Td>
                     <Td align="right" positive={s.realized_pnl >= 0}>
-                      {s.realized_pnl >= 0 ? '+' : ''}{fmt(s.realized_pnl, 2, '$')}
+                      {s.realized_pnl >= 0 ? '+' : ''}{Math.abs(s.realized_pnl).toLocaleString()}
                     </Td>
                     <Td align="right">{s.trade_count}</Td>
                     <Td align="right" positive={s.win_rate >= 50}>
@@ -222,10 +252,10 @@ export default function Performance() {
                     <Td>{t.executed_at.slice(0, 10)}</Td>
                     <Td><TickerBadge>{t.ticker}</TickerBadge></Td>
                     <Td align="right">{t.qty}</Td>
-                    <Td align="right">${fmt(t.sell_price)}</Td>
-                    <Td align="right">${fmt(t.avg_cost)}</Td>
+                    <Td align="right">{fmtCurrency(t.sell_price, t.currency)}</Td>
+                    <Td align="right">{fmtCurrency(t.avg_cost, t.currency)}</Td>
                     <Td align="right" positive={t.realized_pnl >= 0}>
-                      {t.realized_pnl >= 0 ? '+' : ''}{fmt(t.realized_pnl, 2, '$')}
+                      {fmtCurrency(t.realized_pnl, t.currency, t.realized_pnl >= 0)}
                       <PctBadge positive={t.realized_pnl >= 0}>
                         ({t.realized_pnl >= 0 ? '+' : ''}{fmt(t.realized_pnl_pct, 1)}%)
                       </PctBadge>
@@ -376,12 +406,8 @@ const ErrorMsg = styled.div`
 
 const MetricsRow = styled.div`
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: ${spacing.md};
-
-  @media (max-width: 900px) {
-    grid-template-columns: repeat(2, 1fr);
-  }
 `
 
 const Card = styled.div`

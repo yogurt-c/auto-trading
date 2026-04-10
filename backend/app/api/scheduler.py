@@ -11,7 +11,13 @@ from app.infrastructure.config import get_settings
 
 _HIDDEN_KEYS = {"__SECRET_KEY__", "APP_PASSWORD_HASH"}
 _WRITE_BLOCKED_KEYS = {"__SECRET_KEY__", "APP_PASSWORD_HASH"}
-_MASKED_KEYS = {"KIS_APP_KEY", "KIS_APP_SECRET", "ANTHROPIC_API_KEY"}
+_MASKED_KEYS = {
+    "KIS_PAPER_APP_KEY",
+    "KIS_PAPER_APP_SECRET",
+    "KIS_REAL_APP_KEY",
+    "KIS_REAL_APP_SECRET",
+    "ANTHROPIC_API_KEY",
+}
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -106,7 +112,16 @@ def save_setting(key: str, req: SettingValue):
     if key in _WRITE_BLOCKED_KEYS:
         raise HTTPException(status_code=403, detail="해당 키는 직접 수정할 수 없습니다")
     db.save_setting(key, req.value)
-    if key in ("ANTHROPIC_API_KEY", "KIS_APP_KEY", "KIS_APP_SECRET", "KIS_ACCOUNT_NO", "KIS_PAPER"):
+    if key in (
+        "ANTHROPIC_API_KEY",
+        "KIS_PAPER_APP_KEY",
+        "KIS_PAPER_APP_SECRET",
+        "KIS_PAPER_ACCOUNT_NO",
+        "KIS_REAL_APP_KEY",
+        "KIS_REAL_APP_SECRET",
+        "KIS_REAL_ACCOUNT_NO",
+        "KIS_PAPER",
+    ):
         from app.infrastructure.config import reload_settings
 
         reload_settings()

@@ -18,6 +18,7 @@ def _make_rt(
     avg_cost: float = 100.0,
     strategy_id: int | None = None,
     executed_at: str = "2026-03-15T14:30:00",
+    currency: str = "USD",
 ) -> dict:
     pnl = (sell_price - avg_cost) * qty
     pnl_pct = round((pnl / (avg_cost * qty) * 100) if avg_cost else 0.0, 2)
@@ -30,6 +31,7 @@ def _make_rt(
         "avg_cost": avg_cost,
         "realized_pnl": pnl,
         "realized_pnl_pct": pnl_pct,
+        "currency": currency,
         "strategy_id": strategy_id,
         "executed_at": executed_at,
     }
@@ -256,3 +258,22 @@ def test_strategy_sorted_by_pnl_desc(aggregator):
     # S2 (pnl=100) > S1 (pnl=-100) 순서
     assert summary.by_strategy[0].strategy_id == 2
     assert summary.by_strategy[1].strategy_id == 1
+
+
+# ---------------------------------------------------------------------------
+# Currency
+# ---------------------------------------------------------------------------
+
+
+def test_currency_preserved_usd(aggregator):
+    """USD currency가 RealizedTradeVO에 유지되는지 확인."""
+    rt = _make_rt(currency="USD")
+    summary = aggregator.aggregate([rt], {}, "2026-01-01", "2026-12-31")
+    assert summary.trades[0].currency == "USD"
+
+
+def test_currency_preserved_krw(aggregator):
+    """KRW currency가 RealizedTradeVO에 유지되는지 확인."""
+    rt = _make_rt(ticker="005930", currency="KRW")
+    summary = aggregator.aggregate([rt], {}, "2026-01-01", "2026-12-31")
+    assert summary.trades[0].currency == "KRW"

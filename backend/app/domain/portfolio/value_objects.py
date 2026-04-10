@@ -34,18 +34,32 @@ class HoldingValuation(BaseModel):
     cost_basis: Money
     pnl: Money
     pnl_pct: float
+    market: str = "US"    # "KR" | "US"
+    currency: str = "USD"  # "KRW" | "USD"
 
 
-class PortfolioSnapshot(BaseModel):
-    """Aggregated portfolio valuation at a point in time."""
+class MarketSummary(BaseModel):
+    """Aggregated valuation for a single market (KR or US)."""
 
     model_config = ConfigDict(frozen=True)
 
-    holdings: list[HoldingValuation]
+    market: str    # "KR" | "US"
+    currency: str  # "KRW" | "USD"
     total_market_value: Money
     total_cost_basis: Money
     total_pnl: Money
     total_pnl_pct: float
+    holding_count: int
+
+
+class PortfolioSnapshot(BaseModel):
+    """Aggregated portfolio valuation at a point in time, split by market."""
+
+    model_config = ConfigDict(frozen=True)
+
+    holdings: list[HoldingValuation]
+    kr: MarketSummary | None = None  # None when no KR holdings
+    us: MarketSummary | None = None  # None when no US holdings
 
 
 class RealizedTradeVO(BaseModel):
@@ -61,6 +75,7 @@ class RealizedTradeVO(BaseModel):
     avg_cost: float
     realized_pnl: float
     realized_pnl_pct: float
+    currency: str = "USD"  # "KRW" | "USD"
     strategy_id: int | None
     strategy_name: str | None
     executed_at: datetime

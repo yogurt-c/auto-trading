@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .value_objects import (
     HoldingValuation,
+    MarketSummary,
     Money,
     PerformanceSummary,
     PeriodPnl,
@@ -11,6 +12,25 @@ from .value_objects import (
     RealizedTradeVO,
     StrategyPnl,
 )
+
+
+def _make_market_summary(
+    hvs: list[HoldingValuation],
+    market: str,
+    currency: str,
+) -> MarketSummary:
+    mv = sum(hv.market_value.amount for hv in hvs)
+    cb = sum(hv.cost_basis.amount for hv in hvs)
+    pnl = mv - cb
+    return MarketSummary(
+        market=market,
+        currency=currency,
+        total_market_value=Money(amount=mv, currency=currency),
+        total_cost_basis=Money(amount=cb, currency=currency),
+        total_pnl=Money(amount=pnl, currency=currency),
+        total_pnl_pct=round(pnl / cb * 100 if cb else 0.0, 2),
+        holding_count=len(hvs),
+    )
 
 
 class PortfolioValuationService:
@@ -25,14 +45,14 @@ class PortfolioValuationService:
         holdings: list[dict],
         current_prices: dict[str, float],
     ) -> PortfolioSnapshot:
-        """Calculate portfolio valuation snapshot.
+        """Calculate portfolio valuation snapshot, split by KR/US market.
 
         Args:
             holdings: list of holding dicts from core/portfolio.get_all_holdings()
             current_prices: ticker → price map from core/market.get_current_prices()
 
         Returns:
-            PortfolioSnapshot with per-holding valuations and portfolio totals.
+            PortfolioSnapshot with per-holding valuations and separate KR/US summaries.
         """
         holding_valuations: list[HoldingValuation] = []
 
@@ -41,6 +61,8 @@ class PortfolioValuationService:
             shares = float(h["shares"])
             avg_price = float(h["avg_price"])
             current_price = float(current_prices.get(ticker, avg_price))
+            market = h.get("market", "US")
+            currency = h.get("currency", "USD")
 
             market_value = shares * current_price
             cost_basis = shares * avg_price
@@ -51,33 +73,31 @@ class PortfolioValuationService:
                 HoldingValuation(
                     ticker=ticker,
                     shares=shares,
-                    avg_price=Money(amount=avg_price),
-                    current_price=Money(amount=current_price),
-                    market_value=Money(amount=market_value),
-                    cost_basis=Money(amount=cost_basis),
-                    pnl=Money(amount=pnl),
+                    avg_price=Money(amount=avg_price, currency=currency),
+                    current_price=Money(amount=current_price, currency=currency),
+                    market_value=Money(amount=market_value, currency=currency),
+                    cost_basis=Money(amount=cost_basis, currency=currency),
+                    pnl=Money(amount=pnl, currency=currency),
                     pnl_pct=pnl_pct,
+                    market=market,
+                    currency=currency,
                 )
             )
 
-        total_market_value = sum(hv.market_value.amount for hv in holding_valuations)
-        total_cost_basis = sum(hv.cost_basis.amount for hv in holding_valuations)
-        total_pnl = total_market_value - total_cost_basis
-        total_pnl_pct = round((total_pnl / total_cost_basis * 100) if total_cost_basis else 0.0, 2)
+        kr_hvs = [hv for hv in holding_valuations if hv.market == "KR"]
+        us_hvs = [hv for hv in holding_valuations if hv.market != "KR"]
 
         return PortfolioSnapshot(
             holdings=holding_valuations,
-            total_market_value=Money(amount=total_market_value),
-            total_cost_basis=Money(amount=total_cost_basis),
-            total_pnl=Money(amount=total_pnl),
-            total_pnl_pct=total_pnl_pct,
+            kr=_make_market_summary(kr_hvs, "KR", "KRW") if kr_hvs else None,
+            us=_make_market_summary(us_hvs, "US", "USD") if us_hvs else None,
         )
 
 
 class RealizedPnlAggregator:
     """순수 집계 서비스 — I/O 없음.
 
-    realized_trades rows가 이미 (sell_price, avg_cost, realized_pnl)을 가지고 있으므로
+    realized_trades rows가 이미 (sell_price, avg_cost, realized_pnl, currency)을 가지고 있으므로
     재계산 불필요. by_period / by_strategy 집계만 수행.
     """
 

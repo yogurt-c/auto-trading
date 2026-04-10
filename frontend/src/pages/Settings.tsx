@@ -5,11 +5,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { settingsApi, authApi } from '../api/endpoints'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
 
-const SETTING_FIELDS = [
-  { key: 'KIS_APP_KEY', label: 'KIS App Key', type: 'password' },
-  { key: 'KIS_APP_SECRET', label: 'KIS App Secret', type: 'password' },
-  { key: 'KIS_ACCOUNT_NO', label: 'KIS 계좌번호 (예: 12345678-01)', type: 'text' },
-  { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', type: 'password' },
+const PAPER_FIELDS = [
+  { key: 'KIS_PAPER_APP_KEY', label: 'App Key', type: 'password' },
+  { key: 'KIS_PAPER_APP_SECRET', label: 'App Secret', type: 'password' },
+  { key: 'KIS_PAPER_ACCOUNT_NO', label: '계좌번호 (8자리 숫자)', type: 'text' },
+]
+
+const REAL_FIELDS = [
+  { key: 'KIS_REAL_APP_KEY', label: 'App Key', type: 'password' },
+  { key: 'KIS_REAL_APP_SECRET', label: 'App Secret', type: 'password' },
+  { key: 'KIS_REAL_ACCOUNT_NO', label: '계좌번호 (8자리 숫자)', type: 'text' },
 ]
 
 export default function Settings() {
@@ -120,27 +125,84 @@ export default function Settings() {
         </Section>
 
         <Section>
-          <SectionTitle>API Keys</SectionTitle>
-          {SETTING_FIELDS.map(field => (
-            <Field key={field.key}>
-              <Label>{field.label}</Label>
-              <Input
-                type={field.type}
-                placeholder={
-                  isLoading
-                    ? '로딩 중...'
-                    : settings?.[field.key]
-                      ? '••••••••••••••••'
-                      : '입력되지 않음'
-                }
-                value={get(field.key)}
-                onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value }))}
-              />
-              {settings?.[field.key] && (
-                <Hint>현재 값 설정됨 — 새 값 입력 시 덮어씌워집니다</Hint>
-              )}
-            </Field>
-          ))}
+          <SectionTitle>KIS API Keys</SectionTitle>
+          <CredentialGrid>
+            <CredentialBlock active={isPaper}>
+              <CredentialBlockTitle active={isPaper}>
+                모의투자
+                {isPaper && <ActiveBadge>활성</ActiveBadge>}
+              </CredentialBlockTitle>
+              {PAPER_FIELDS.map(field => (
+                <Field key={field.key}>
+                  <Label>{field.label}</Label>
+                  <Input
+                    type={field.type}
+                    placeholder={
+                      isLoading
+                        ? '로딩 중...'
+                        : settings?.[field.key]
+                          ? '••••••••••••••••'
+                          : '입력되지 않음'
+                    }
+                    value={get(field.key)}
+                    onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value }))}
+                  />
+                  {settings?.[field.key] && (
+                    <Hint>현재 값 설정됨 — 새 값 입력 시 덮어씌워집니다</Hint>
+                  )}
+                </Field>
+              ))}
+            </CredentialBlock>
+
+            <CredentialBlock active={!isPaper}>
+              <CredentialBlockTitle active={!isPaper}>
+                실전투자
+                {!isPaper && <ActiveBadge live>활성</ActiveBadge>}
+              </CredentialBlockTitle>
+              {REAL_FIELDS.map(field => (
+                <Field key={field.key}>
+                  <Label>{field.label}</Label>
+                  <Input
+                    type={field.type}
+                    placeholder={
+                      isLoading
+                        ? '로딩 중...'
+                        : settings?.[field.key]
+                          ? '••••••••••••••••'
+                          : '입력되지 않음'
+                    }
+                    value={get(field.key)}
+                    onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value }))}
+                  />
+                  {settings?.[field.key] && (
+                    <Hint>현재 값 설정됨 — 새 값 입력 시 덮어씌워집니다</Hint>
+                  )}
+                </Field>
+              ))}
+            </CredentialBlock>
+          </CredentialGrid>
+        </Section>
+
+        <Section>
+          <SectionTitle>Anthropic API Key</SectionTitle>
+          <Field>
+            <Label>API Key</Label>
+            <Input
+              type="password"
+              placeholder={
+                isLoading
+                  ? '로딩 중...'
+                  : settings?.['ANTHROPIC_API_KEY']
+                    ? '••••••••••••••••'
+                    : '입력되지 않음'
+              }
+              value={get('ANTHROPIC_API_KEY')}
+              onChange={e => setForm(f => ({ ...f, ANTHROPIC_API_KEY: e.target.value }))}
+            />
+            {settings?.['ANTHROPIC_API_KEY'] && (
+              <Hint>현재 값 설정됨 — 새 값 입력 시 덮어씌워집니다</Hint>
+            )}
+          </Field>
         </Section>
 
         <SaveRow>
@@ -366,6 +428,43 @@ const PwError = styled.div`
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid ${colors.danger};
   border-radius: ${radius.sm};
+`
+
+const CredentialGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: ${spacing.lg};
+
+  @media (max-width: 560px) {
+    grid-template-columns: 1fr;
+  }
+`
+
+const CredentialBlock = styled.div<{ active: boolean }>`
+  border: 1px solid ${({ active }) => active ? colors.primary : colors.border};
+  border-radius: ${radius.md};
+  padding: ${spacing.lg};
+  background: ${({ active }) => active ? 'rgba(108, 124, 255, 0.04)' : 'transparent'};
+  transition: border-color 0.2s, background 0.2s;
+`
+
+const CredentialBlockTitle = styled.div<{ active: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: ${spacing.sm};
+  font-size: ${fontSize.sm};
+  font-weight: 600;
+  color: ${({ active }) => active ? colors.primary : colors.textMuted};
+  margin-bottom: ${spacing.lg};
+`
+
+const ActiveBadge = styled.span<{ live?: boolean }>`
+  font-size: ${fontSize.xs};
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: ${({ live }) => live ? 'rgba(248, 113, 113, 0.15)' : 'rgba(108, 124, 255, 0.15)'};
+  color: ${({ live }) => live ? colors.danger : colors.primary};
 `
 
 const LiveWarning = styled.div`

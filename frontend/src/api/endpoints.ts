@@ -1,6 +1,7 @@
 import api from './client'
 import type {
   PortfolioResponse,
+  MarketSummary,
   Holding,
   Transaction,
   Strategy,
@@ -14,32 +15,47 @@ import type {
   PaginatedRuns,
   Settings,
   PerformanceSummary,
+  RealizedTrade,
+  Currency,
 } from './types'
 
 // ── Portfolio ──────────────────────────────────────────────────────────────
+
+const parseHolding = (h: any): Holding => ({
+  ticker: h.ticker,
+  shares: h.shares,
+  avg_price: h.avg_price,
+  current_price: h.current_price ?? null,
+  market_value: h.market_value ?? null,
+  pnl: h.pnl ?? null,
+  pnl_pct: h.pnl_pct ?? null,
+  market: h.market ?? 'US',
+  currency: (h.currency ?? 'USD') as Currency,
+})
+
+const parseMarketSummary = (s: any): MarketSummary | null =>
+  s
+    ? {
+        total_market_value: s.total_market_value ?? 0,
+        total_cost_basis: s.total_cost_basis ?? 0,
+        total_pnl: s.total_pnl ?? 0,
+        total_pnl_pct: s.total_pnl_pct ?? 0,
+        holding_count: s.holding_count ?? 0,
+        currency: (s.currency ?? 'USD') as Currency,
+      }
+    : null
 
 export const portfolioApi = {
   get: () =>
     api.get<any>('/portfolio').then(r => {
       const d = r.data
       return {
-        holdings: (d.holdings ?? []).map((h: any) => ({
-          symbol: h.ticker,
-          quantity: h.shares,
-          avg_cost: h.avg_price,
-          current_price: h.current_price ?? null,
-          market_value: h.market_value ?? null,
-          unrealized_pnl: h.pnl ?? null,
-          unrealized_pnl_pct: h.pnl_pct ?? null,
-        })),
+        holdings: (d.holdings ?? []).map(parseHolding),
         summary: {
-          total_market_value: d.summary?.total_market_value ?? 0,
-          total_cost_basis: d.summary?.total_cost_basis ?? 0,
-          total_unrealized_pnl: d.summary?.total_pnl ?? 0,
-          total_unrealized_pnl_pct: d.summary?.total_pnl_pct ?? 0,
-          holding_count: d.count ?? 0,
+          kr: parseMarketSummary(d.summary?.kr),
+          us: parseMarketSummary(d.summary?.us),
         },
-        fetch_errors: d.failed_tickers ?? [],
+        failed_tickers: d.failed_tickers ?? [],
       } as PortfolioResponse
     }),
 
@@ -50,15 +66,7 @@ export const portfolioApi = {
 
   holdings: () =>
     api.get<any>('/portfolio').then(r =>
-      (r.data.holdings ?? []).map((h: any): Holding => ({
-        symbol: h.ticker,
-        quantity: h.shares,
-        avg_cost: h.avg_price,
-        current_price: h.current_price ?? null,
-        market_value: h.market_value ?? null,
-        unrealized_pnl: h.pnl ?? null,
-        unrealized_pnl_pct: h.pnl_pct ?? null,
-      }))
+      (r.data.holdings ?? []).map(parseHolding)
     ),
 
   transactions: (limit = 50) =>
@@ -67,34 +75,15 @@ export const portfolioApi = {
       .then(r =>
         (r.data.transactions ?? []).map((t: any): Transaction => ({
           id: t.id,
-          symbol: t.ticker,
-          transaction_type: String(t.action).toUpperCase() as 'BUY' | 'SELL',
-          quantity: t.shares,
+          ticker: t.ticker,
+          action: t.action as 'buy' | 'sell',
+          shares: t.shares,
           price: t.price,
-          total_amount: t.total,
-          transaction_date: t.executed_at,
-          notes: t.notes ?? null,
+          total: t.total,
+          executed_at: t.executed_at,
+          currency: (t.currency ?? 'KRW') as Currency,
         }))
       ),
-
-  addTransaction: (data: {
-    symbol: string
-    transaction_type: 'BUY' | 'SELL'
-    quantity: number
-    price: number
-    transaction_date: string
-    notes?: string
-  }) =>
-    api
-      .post<any>('/portfolio/transactions', {
-        ticker: data.symbol,
-        action: data.transaction_type.toLowerCase(),
-        shares: data.quantity,
-        price: data.price,
-        executed_at: data.transaction_date,
-        notes: data.notes,
-      })
-      .then(r => r.data as Transaction),
 }
 
 // ── Strategies ─────────────────────────────────────────────────────────────
@@ -150,12 +139,17 @@ export const tradingApi = {
       logs: (r.data.logs ?? []).map((l: any): TradeLog => ({
         id: l.id,
         strategy_id: l.strategy_id ?? null,
-        symbol: l.ticker,
-        action: l.side,
-        quantity: l.qty,
-        price: l.filled_price ?? l.limit_price ?? null,
+        ticker: l.ticker,
+        side: l.side,
+        qty: l.qty,
+        order_type: l.order_type,
+        limit_price: l.limit_price ?? null,
+        filled_price: l.filled_price ?? null,
         status: l.status,
-        error_message: l.status === 'failed' ? (l.ai_reasoning ?? null) : null,
+        broker_order_id: l.broker_order_id ?? null,
+        market: l.market ?? 'US',
+        currency: l.currency ?? 'USD',
+        ai_reasoning: l.ai_reasoning ?? null,
         avg_cost_snapshot: l.avg_cost_snapshot ?? null,
         executed_at: l.executed_at,
       })),
@@ -177,8 +171,8 @@ export const schedulerApi = {
         started_at: run.started_at,
         finished_at: run.finished_at ?? null,
         status: run.status,
-        strategies_run: run.strategies_checked ?? 0,
-        trades_executed: run.orders_placed ?? 0,
+        strategies_checked: run.strategies_checked ?? 0,
+        orders_placed: run.orders_placed ?? 0,
         error_message: run.error_message ?? null,
         summary: run.summary ?? null,
       })),
@@ -195,8 +189,17 @@ export const schedulerApi = {
 export const performanceApi = {
   get: (params?: { start_date?: string; end_date?: string; group_by?: 'day' | 'month' }) =>
     api
-      .get<PerformanceSummary>('/portfolio/performance', { params })
-      .then(r => r.data),
+      .get<any>('/portfolio/performance', { params })
+      .then(r => {
+        const d = r.data
+        return {
+          ...d,
+          trades: (d.trades ?? []).map((t: any): RealizedTrade => ({
+            ...t,
+            currency: (t.currency ?? 'USD') as Currency,
+          })),
+        } as PerformanceSummary
+      }),
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────

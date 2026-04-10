@@ -33,24 +33,33 @@ _PAPER_BASE = "https://openapivts.koreainvestment.com:29443"
 _KST = ZoneInfo("Asia/Seoul")
 
 # 국내 TR_ID
-_KR_BUY_REAL = "TTTC0802U"
-_KR_SELL_REAL = "TTTC0801U"
-_KR_BUY_PAPER = "VTTC0802U"
-_KR_SELL_PAPER = "VTTC0801U"
+_KR_BUY_REAL = "TTTC0012U"
+_KR_SELL_REAL = "TTTC0011U"
+_KR_BUY_PAPER = "VTTC0012U"
+_KR_SELL_PAPER = "VTTC0011U"
 _KR_BALANCE_REAL = "TTTC8434R"
 _KR_BALANCE_PAPER = "VTTC8434R"
-_KR_ORDER_INQUIRE_REAL = "TTTC8001R"
-_KR_ORDER_INQUIRE_PAPER = "VTTC8001R"
+_KR_ORDER_INQUIRE_REAL = "TTTC0081R"
+_KR_ORDER_INQUIRE_PAPER = "VTTC0081R"
 
 # 해외(미국) TR_ID
 _US_BUY_REAL = "TTTT1002U"
 _US_SELL_REAL = "TTTT1006U"
 _US_BUY_PAPER = "VTTT1002U"
-_US_SELL_PAPER = "VTTT1006U"
+_US_SELL_PAPER = "VTTT1001U"
 _US_BALANCE_REAL = "TTTS3012R"
 _US_BALANCE_PAPER = "VTTS3012R"
 _US_ORDER_INQUIRE_REAL = "TTTS3035R"
 _US_ORDER_INQUIRE_PAPER = "VTTS3035R"
+
+# 현재가 조회 TR_ID
+_KR_PRICE_INQUIRY = "FHKST01010100"
+
+# 주문 취소 TR_ID
+_KR_CANCEL_REAL = "TTTC0013U"
+_KR_CANCEL_PAPER = "VTTC0013U"
+_US_CANCEL_REAL = "TTTT1004U"
+_US_CANCEL_PAPER = "VTTT1004U"
 
 # 기본 미국 거래소 (NASD=NASDAQ, NYSE, AMEX)
 _DEFAULT_US_EXCHANGE = "NASD"
@@ -79,14 +88,15 @@ def _base_url() -> str:
 
 
 def _parse_account(account_no: str) -> tuple[str, str]:
-    """'12345678-01' → ('12345678', '01')"""
+    """계좌번호 파싱. '12345678' 또는 '12345678-01' 형식 모두 허용.
+    상품코드(뒤 2자리) 생략 시 '01'로 기본 처리.
+    """
     parts = account_no.split("-")
     if len(parts) == 2:
         return parts[0], parts[1]
-    raise ValueError(
-        f"계좌번호 형식이 잘못되었습니다: '{account_no}'. "
-        "'12345678-01' 형식으로 입력해 주세요."
-    )
+    if len(parts) == 1 and parts[0]:
+        return parts[0], "01"
+    raise ValueError(f"계좌번호 형식이 잘못되었습니다: '{account_no}'. 8자리 숫자로 입력해 주세요.")
 
 
 def _get_access_token() -> str:
@@ -194,8 +204,8 @@ def get_account() -> dict:
             "CANO": cano,
             "ACNT_PRDT_CD": acnt_cd,
             "AFHR_FLPR_YN": "N",
-            "OFL_YN": "N",
-            "INQR_DVSN": "02",
+            "OFL_YN": "",
+            "INQR_DVSN": "01",
             "UNPR_DVSN": "01",
             "FUND_STTL_ICLD_YN": "N",
             "FNCG_AMT_AUTO_RDPT_YN": "N",
@@ -222,6 +232,7 @@ def get_account() -> dict:
         "buying_power": buying_power,
         "currency": "KRW",
         "status": "normal",
+        "is_paper": s.kis_paper,
     }
 
 
@@ -243,8 +254,8 @@ def _get_domestic_positions() -> list[dict]:
             "CANO": cano,
             "ACNT_PRDT_CD": acnt_cd,
             "AFHR_FLPR_YN": "N",
-            "OFL_YN": "N",
-            "INQR_DVSN": "02",
+            "OFL_YN": "",
+            "INQR_DVSN": "01",
             "UNPR_DVSN": "01",
             "FUND_STTL_ICLD_YN": "N",
             "FNCG_AMT_AUTO_RDPT_YN": "N",
@@ -281,9 +292,6 @@ def _get_domestic_positions() -> list[dict]:
 def _get_overseas_positions() -> list[dict]:
     """해외(미국) 보유 종목 조회."""
     s = get_settings()
-    if s.kis_paper:
-        logger.warning("KIS 모의투자는 해외 주식 잔고 조회를 지원하지 않을 수 있습니다.")
-
     cano, acnt_cd = _parse_account(s.kis_account_no)
     tr_id = _US_BALANCE_PAPER if s.kis_paper else _US_BALANCE_REAL
 
@@ -437,10 +445,12 @@ def get_filled_orders(limit: int = 50) -> list[dict]:
             "SLL_BUY_DVSN_CD": "00",
             "INQR_DVSN": "01",
             "PDNO": "",
-            "CCL_DVSN": "01",
             "ORD_GNO_BRNO": "",
             "ODNO": "",
-            "INQR_DVSN2": "",
+            "CCLD_DVSN": "01",
+            "INQR_DVSN_1": "",
+            "INQR_DVSN_3": "00",
+            "EXCG_ID_DVSN_CD": "KRX",
             "CTX_AREA_FK100": "",
             "CTX_AREA_NK100": "",
         },
@@ -532,6 +542,7 @@ def _place_domestic_order(
 
     output = data.get("output", {})
     order_id = output.get("ODNO", output.get("odno", ""))
+    krx_fwdg_ord_orgno = output.get("KRX_FWDG_ORD_ORGNO", output.get("krx_fwdg_ord_orgno", ""))
 
     logger.info(f"KIS 국내 주문 접수: {side} {int(qty)}주 {ticker} [{order_type}] id={order_id}")
 
@@ -540,6 +551,7 @@ def _place_domestic_order(
 
     return {
         "broker_order_id": order_id,
+        "krx_fwdg_ord_orgno": krx_fwdg_ord_orgno,
         "ticker": ticker,
         "side": side.lower(),
         "qty": float(int(qty)),
@@ -561,9 +573,6 @@ def _place_overseas_order(
 ) -> dict:
     """해외(미국) 주식 주문."""
     s = get_settings()
-    if s.kis_paper:
-        logger.warning("KIS 모의투자는 해외 주식 주문을 지원하지 않을 수 있습니다.")
-
     cano, acnt_cd = _parse_account(s.kis_account_no)
 
     is_buy = side.lower() == "buy"
@@ -645,3 +654,113 @@ def sync_positions() -> list[dict]:
 
     positions = get_positions()
     return db.rebuild_holdings_from_broker(positions)
+
+
+# ---------------------------------------------------------------------------
+# 현재가 조회
+# ---------------------------------------------------------------------------
+
+
+def get_current_price(ticker: str) -> dict:
+    """국내 단일 종목 현재가 조회.
+
+    Returns:
+        ticker, price, change, change_rate, volume, market, currency
+    """
+    if not is_korean_ticker(ticker):
+        raise NotImplementedError(f"해외 종목 현재가 조회는 지원하지 않습니다: {ticker}")
+
+    resp = httpx.get(
+        f"{_base_url()}/uapi/domestic-stock/v1/quotations/inquire-price",
+        headers=_headers(_KR_PRICE_INQUIRY),
+        params={
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": ticker,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = _check_response(resp.json(), f"inquire-price {ticker}")
+
+    output = data.get("output", {})
+    return {
+        "ticker": ticker,
+        "price": float(output.get("stck_prpr", 0)),       # 주식 현재가
+        "change": float(output.get("prdy_vrss", 0)),       # 전일 대비
+        "change_rate": float(output.get("prdy_ctrt", 0)),  # 전일 대비율(%)
+        "volume": int(output.get("acml_vol", 0) or 0),     # 누적 거래량
+        "market": "KR",
+        "currency": "KRW",
+    }
+
+
+# ---------------------------------------------------------------------------
+# 주문 취소
+# ---------------------------------------------------------------------------
+
+
+def cancel_order(
+    order_id: str,
+    market: str = "KR",
+    krx_fwdg_ord_orgno: str = "",
+    ticker: str = "",
+) -> dict:
+    """미체결 주문 취소.
+
+    Args:
+        order_id: 취소할 원주문번호 (broker_order_id)
+        market: 'KR' 또는 'US'
+        krx_fwdg_ord_orgno: 국내 주문 시 KRX 전송 주문 조직번호 (place_order 반환값, 없으면 빈 문자열)
+        ticker: 해외 주문 취소 시 종목 코드 (필수)
+
+    Returns:
+        original_order_id, cancel_order_id, status, market
+    """
+    s = get_settings()
+    cano, acnt_cd = _parse_account(s.kis_account_no)
+
+    if market == "KR":
+        tr_id = _KR_CANCEL_PAPER if s.kis_paper else _KR_CANCEL_REAL
+        body = {
+            "CANO": cano,
+            "ACNT_PRDT_CD": acnt_cd,
+            "KRX_FWDG_ORD_ORGNO": krx_fwdg_ord_orgno,
+            "ORGN_ODNO": order_id,
+            "ORD_DVSN": "00",
+            "RVSE_CNCL_DVSN_CD": "02",  # 02 = 취소
+            "ORD_QTY": "0",
+            "ORD_UNPR": "0",
+            "QTY_ALL_ORD_YN": "Y",       # 잔량 전량 취소
+            "EXCG_ID_DVSN_CD": "KRX",    # 거래소 ID (KRX: 한국거래소, NXT: 대체거래소, SOR)
+        }
+        endpoint = f"{_base_url()}/uapi/domestic-stock/v1/trading/order-rvsecncl"
+    else:
+        tr_id = _US_CANCEL_PAPER if s.kis_paper else _US_CANCEL_REAL
+        body = {
+            "CANO": cano,
+            "ACNT_PRDT_CD": acnt_cd,
+            "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
+            "PDNO": ticker.upper(),   # 해외 취소 시 종목코드 필수
+            "ORGN_ODNO": order_id,
+            "RVSE_CNCL_DVSN_CD": "02",
+            "ORD_QTY": "0",
+            "OVRS_ORD_UNPR": "0",     # 취소주문 시 "0" 입력
+            "MGCO_APTM_ODNO": "",     # 운용사지정주문번호 (일반 주문은 빈 문자열)
+            "ORD_SVR_DVSN_CD": "0",
+        }
+        endpoint = f"{_base_url()}/uapi/overseas-stock/v1/trading/order-rvsecncl"
+
+    resp = httpx.post(endpoint, headers=_headers(tr_id), json=body, timeout=10)
+    resp.raise_for_status()
+    data = _check_response(resp.json(), f"cancel order {order_id} ({market})")
+
+    output = data.get("output", {})
+    cancel_order_id = output.get("ODNO", output.get("odno", ""))
+
+    logger.info(f"KIS 주문 취소: order_id={order_id}, market={market}, cancel_id={cancel_order_id}")
+    return {
+        "original_order_id": order_id,
+        "cancel_order_id": cancel_order_id,
+        "status": "canceled",
+        "market": market,
+    }

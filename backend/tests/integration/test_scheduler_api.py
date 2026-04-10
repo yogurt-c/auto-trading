@@ -94,9 +94,9 @@ def test_settings_status_paper_false_returns_warning(auth_client):
 
     mock_settings = Settings(
         anthropic_api_key="key1",
-        kis_app_key="key2",
-        kis_app_secret="key3",
-        kis_account_no="12345678-01",
+        kis_real_app_key="key2",
+        kis_real_app_secret="key3",
+        kis_real_account_no="12345678",
         kis_paper=False,
     )
     with (

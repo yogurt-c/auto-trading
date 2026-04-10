@@ -17,12 +17,12 @@ def test_get_portfolio_empty(auth_client):
     data = resp.json()
     assert data["holdings"] == []
     assert data["count"] == 0
-    assert data["summary"] == {}
+    assert data["summary"] == {"kr": None, "us": None}
 
 
 def test_get_portfolio_with_holdings(auth_client):
-    """Mock holdings + mock prices → P&L 포함 응답."""
-    holdings = [{"ticker": "AAPL", "shares": 10.0, "avg_price": 100.0}]
+    """Mock holdings + mock prices → P&L 포함 응답 (US 종목)."""
+    holdings = [{"ticker": "AAPL", "shares": 10.0, "avg_price": 100.0, "market": "US", "currency": "USD"}]
     with (
         patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
         patch("app.api.portfolio.get_current_prices", return_value={"AAPL": 120.0}),
@@ -40,15 +40,35 @@ def test_get_portfolio_with_holdings(auth_client):
     assert h["cost_basis"] == pytest.approx(1000.0)
     assert h["pnl"] == pytest.approx(200.0)
     assert h["pnl_pct"] == pytest.approx(20.0)
-    assert data["summary"]["total_market_value"] == pytest.approx(1200.0)
-    assert data["summary"]["total_cost_basis"] == pytest.approx(1000.0)
-    assert data["summary"]["total_pnl"] == pytest.approx(200.0)
-    assert data["summary"]["total_pnl_pct"] == pytest.approx(20.0)
+    assert h["market"] == "US"
+    assert h["currency"] == "USD"
+    # summary는 us에 집계됨
+    assert data["summary"]["kr"] is None
+    assert data["summary"]["us"]["total_market_value"] == pytest.approx(1200.0)
+    assert data["summary"]["us"]["total_cost_basis"] == pytest.approx(1000.0)
+    assert data["summary"]["us"]["total_pnl"] == pytest.approx(200.0)
+    assert data["summary"]["us"]["total_pnl_pct"] == pytest.approx(20.0)
+    assert data["summary"]["us"]["currency"] == "USD"
+
+
+def test_get_portfolio_kr_holding(auth_client):
+    """국내 종목 보유 시 KR 분리 summary 반환."""
+    holdings = [{"ticker": "005930", "shares": 10.0, "avg_price": 70000.0, "market": "KR", "currency": "KRW"}]
+    with (
+        patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
+        patch("app.api.portfolio.get_current_prices", return_value={"005930": 75000.0}),
+    ):
+        resp = auth_client.get("/api/portfolio")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["summary"]["us"] is None
+    assert data["summary"]["kr"]["total_market_value"] == pytest.approx(750000.0)
+    assert data["summary"]["kr"]["currency"] == "KRW"
 
 
 def test_get_portfolio_failed_tickers(auth_client):
     """가격 조회 실패한 ticker는 failed_tickers에 포함, avg_price로 fallback."""
-    holdings = [{"ticker": "UNKNOWN", "shares": 5.0, "avg_price": 50.0}]
+    holdings = [{"ticker": "UNKNOWN", "shares": 5.0, "avg_price": 50.0, "market": "US", "currency": "USD"}]
     with (
         patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
         patch("app.api.portfolio.get_current_prices", return_value={}),
@@ -65,7 +85,7 @@ def test_get_portfolio_failed_tickers(auth_client):
 
 def test_get_portfolio_response_structure(auth_client):
     """응답에 필수 필드가 모두 포함되어 있는지 확인."""
-    holdings = [{"ticker": "TSLA", "shares": 3.0, "avg_price": 200.0}]
+    holdings = [{"ticker": "TSLA", "shares": 3.0, "avg_price": 200.0, "market": "US", "currency": "USD"}]
     with (
         patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
         patch("app.api.portfolio.get_current_prices", return_value={"TSLA": 210.0}),
@@ -84,8 +104,13 @@ def test_get_portfolio_response_structure(auth_client):
         "cost_basis",
         "pnl",
         "pnl_pct",
+        "market",
+        "currency",
     }
     assert holding_keys <= h.keys()
+    # summary 구조 확인
+    assert "kr" in data["summary"]
+    assert "us" in data["summary"]
 
 
 def test_get_holdings(auth_client, db_holding):
@@ -101,7 +126,7 @@ def test_get_holdings(auth_client, db_holding):
 
 
 def test_get_transactions(auth_client):
-    """GET /api/portfolio/transactions → KIS 체결 주문 이력 반환."""
+    """GET /api/portfolio/transactions → KIS 체결 주문 이력 반환 (KRW currency 주입)."""
     mock_orders = [
         {
             "id": "abc-123",
@@ -127,6 +152,7 @@ def test_get_transactions(auth_client):
     assert t["shares"] == pytest.approx(10.0)
     assert t["price"] == pytest.approx(150.0)
     assert t["total"] == pytest.approx(1500.0)
+    assert t["currency"] == "KRW"  # 국내 전용이므로 항상 KRW
 
 
 def test_get_transactions_limit_param(auth_client):

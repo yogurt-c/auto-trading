@@ -11,9 +11,9 @@ import type { Column } from '../components/DataTable'
 import StatusBadge from '../components/StatusBadge'
 import Pagination from '../components/Pagination'
 import MarkdownContent from '../components/MarkdownContent'
-import type { Strategy, TradeLog, PaginatedRuns } from '../api/types'
+import type { Strategy, TradeLog, PaginatedRuns, Currency } from '../api/types'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
-import { fmt } from '../lib/format'
+import { fmt, fmtCurrency } from '../lib/format'
 
 const INTERVAL_OPTIONS = ['5', '10', '15', '30', '60', '120', '240']
 
@@ -56,12 +56,12 @@ function formatParamValue(key: string, value: unknown, currency?: string): strin
 
 const tradeLogColumns: Column<TradeLog>[] = [
   { key: 'executed_at', header: 'Time', render: r => r.executed_at.slice(0, 19).replace('T', ' ') },
-  { key: 'symbol', header: 'Symbol' },
-  { key: 'action', header: 'Action' },
-  { key: 'quantity', header: 'Qty', align: 'right' },
-  { key: 'price', header: 'Price', align: 'right', render: r => fmt(r.price, 2, '$') },
+  { key: 'ticker', header: 'Ticker' },
+  { key: 'side', header: 'Side' },
+  { key: 'qty', header: 'Qty', align: 'right' },
+  { key: 'filled_price', header: 'Price', align: 'right', render: r => r.filled_price != null ? fmt(r.filled_price, 2, r.currency === 'KRW' ? '₩' : '$') : '—' },
   { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} label={STATUS_LABEL[r.status] ?? r.status} /> },
-  { key: 'error_message', header: 'Error', render: r => r.error_message ?? '' },
+  { key: 'ai_reasoning', header: 'Note', render: r => r.ai_reasoning ?? '' },
 ]
 
 function formatDuration(startedAt: string, finishedAt: string | null): string {
@@ -132,12 +132,17 @@ export default function AutoTrading() {
       <PageTitle>Auto Trading</PageTitle>
 
       {/* 계좌 메트릭 */}
-      <MetricGrid>
-        <MetricCard title="Portfolio Value" value={fmt(account?.portfolio_value, 2, '$')} />
-        <MetricCard title="Buying Power" value={fmt(account?.buying_power, 2, '$')} />
-        <MetricCard title="Cash" value={fmt(account?.cash, 2, '$')} />
-        <MetricCard title="Status" value={account?.status ?? '—'} />
-      </MetricGrid>
+      {(() => {
+        const acctCurrency = (account?.currency ?? 'KRW') as Currency
+        return (
+          <MetricGrid>
+            <MetricCard title="Portfolio Value" value={fmtCurrency(account?.portfolio_value, acctCurrency)} />
+            <MetricCard title="Buying Power"   value={fmtCurrency(account?.buying_power,   acctCurrency)} />
+            <MetricCard title="Cash"           value={fmtCurrency(account?.cash,           acctCurrency)} />
+            <MetricCard title="Status"         value={account?.status ?? '—'} />
+          </MetricGrid>
+        )
+      })()}
 
       {/* 스케줄러 컨트롤 */}
       <ControlCard>
@@ -292,7 +297,7 @@ export default function AutoTrading() {
                   <StrategyInfo>
                     <StrategyName>{run.started_at.slice(0, 19).replace('T', ' ')}</StrategyName>
                     <StrategyMeta>
-                      {run.strategies_run}개 전략 · {run.trades_executed}회 거래 · {formatDuration(run.started_at, run.finished_at)}
+                      {run.strategies_checked}개 전략 · {run.orders_placed}회 거래 · {formatDuration(run.started_at, run.finished_at)}
                     </StrategyMeta>
                   </StrategyInfo>
                   <StrategyActions onClick={e => e.stopPropagation()}>
