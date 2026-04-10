@@ -1,7 +1,7 @@
 """인증 API — status, setup, login, change-password, me."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from starlette.requests import Request
@@ -31,7 +31,7 @@ def auth_status():
 
 
 class PasswordRequest(BaseModel):
-    password: str
+    password: str = Field(min_length=8)
 
 
 @router.post("/setup")
@@ -40,8 +40,6 @@ def setup(request: Request, body: PasswordRequest):
     """최초 비밀번호 설정 (미설정 시만 동작)."""
     if is_configured():
         raise HTTPException(status_code=409, detail="이미 설정되어 있습니다")
-    if not body.password.strip():
-        raise HTTPException(status_code=400, detail="비밀번호를 입력해 주세요")
     set_password(body.password)
     token = create_access_token()
     return {"access_token": token, "token_type": "bearer"}
@@ -74,7 +72,7 @@ def login(request: Request, body: LoginRequest):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str
+    new_password: str = Field(min_length=8)
 
 
 @router.post("/change-password")
@@ -89,8 +87,6 @@ def change_password(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="현재 비밀번호가 올바르지 않습니다",
         )
-    if not body.new_password.strip():
-        raise HTTPException(status_code=400, detail="새 비밀번호를 입력해 주세요")
     set_password(body.new_password)
     return {"success": True}
 

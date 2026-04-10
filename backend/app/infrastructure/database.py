@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -10,9 +12,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 
 def _get_db_url() -> str:
-    import os
-
-    db_path = os.environ["DB_PATH"]
+    db_path = os.environ.get("DB_PATH")
+    if not db_path:
+        raise RuntimeError("DB_PATH 환경변수가 설정되지 않았습니다")
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{db_path}"
 
@@ -30,7 +32,7 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 @contextmanager
-def get_session() -> Session:
+def get_session() -> Iterator[Session]:
     session = SessionLocal()
     try:
         yield session

@@ -82,13 +82,16 @@ def remove_holding(ticker: str) -> bool:
         return True
 
 
-def rebuild_holdings_from_alpaca(positions: list[dict]) -> list[dict]:
-    """Alpaca 전체 포지션으로 holdings 테이블을 원자적으로 재구성."""
+def rebuild_holdings_from_broker(positions: list[dict]) -> list[dict]:
+    """KIS 전체 포지션으로 holdings 테이블을 원자적으로 재구성.
+
+    positions 각 항목: ticker, qty, avg_entry_price, market, currency
+    """
     with get_session() as s:
         existing_count = s.scalar(select(func.count()).select_from(Holding))
         if not positions and existing_count > 0:
             logger.warning(
-                f"Alpaca returned 0 positions but DB has {existing_count} holdings — "
+                f"KIS returned 0 positions but DB has {existing_count} holdings — "
                 "skipping rebuild (network hiccup guard). "
                 "의도적으로 전량 매도했다면 다시 동기화를 실행하세요."
             )
@@ -100,9 +103,10 @@ def rebuild_holdings_from_alpaca(positions: list[dict]) -> list[dict]:
                     ticker=pos["ticker"],
                     shares=pos["qty"],
                     avg_price=pos["avg_entry_price"],
+                    market=pos.get("market", "US"),
+                    currency=pos.get("currency", "USD"),
                 )
             )
-        s.commit()
     return get_all_holdings()
 
 
@@ -138,19 +142,23 @@ def save_strategy(
     description: str = "",
     ticker: str | None = None,
     ai_rationale: str | None = None,
+    market: str = "US",
+    currency: str = "USD",
     entry_price_drop_pct: float | None = None,
     entry_rsi_below: float | None = None,
     take_profit_pct: float | None = None,
     stop_loss_pct: float | None = None,
     sell_ratio: float | None = None,
-    dca_amount_usd: float | None = None,
+    dca_amount: float | None = None,
     dca_frequency_days: int | None = None,
-    max_position_usd: float | None = None,
+    max_position: float | None = None,
     strategy_id: int | None = None,
 ) -> dict:
     with get_session() as s:
         if strategy_id:
             strategy = s.get(Strategy, strategy_id)
+            if strategy is None:
+                raise ValueError(f"Strategy {strategy_id} not found")
         else:
             strategy = Strategy()
             s.add(strategy)
@@ -160,14 +168,16 @@ def save_strategy(
         strategy.strategy_type = strategy_type
         strategy.description = description
         strategy.ai_rationale = ai_rationale
+        strategy.market = market
+        strategy.currency = currency
         strategy.entry_price_drop_pct = entry_price_drop_pct
         strategy.entry_rsi_below = entry_rsi_below
         strategy.take_profit_pct = take_profit_pct
         strategy.stop_loss_pct = stop_loss_pct
         strategy.sell_ratio = sell_ratio
-        strategy.dca_amount_usd = dca_amount_usd
+        strategy.dca_amount = dca_amount
         strategy.dca_frequency_days = dca_frequency_days
-        strategy.max_position_usd = max_position_usd
+        strategy.max_position = max_position
         s.flush()
         return strategy.to_dict()
 
@@ -180,6 +190,13 @@ def update_strategy_status(strategy_id: int, status: str) -> dict | None:
         strategy.status = status
         s.flush()
         return strategy.to_dict()
+
+
+def get_strategy_by_id(strategy_id: int) -> dict | None:
+    """ID로 전략 단건 조회 (O(1))."""
+    with get_session() as s:
+        strategy = s.get(Strategy, strategy_id)
+        return strategy.to_dict() if strategy else None
 
 
 def delete_strategy(strategy_id: int) -> bool:
@@ -205,7 +222,9 @@ def add_trade_log(
     strategy_id: int | None = None,
     limit_price: float | None = None,
     filled_price: float | None = None,
-    alpaca_id: str | None = None,
+    broker_order_id: str | None = None,
+    market: str = "US",
+    currency: str = "USD",
     ai_reasoning: str | None = None,
     avg_cost_snapshot: float | None = None,
 ) -> dict:
@@ -219,7 +238,9 @@ def add_trade_log(
             strategy_id=strategy_id,
             limit_price=limit_price,
             filled_price=filled_price,
-            alpaca_id=alpaca_id,
+            broker_order_id=broker_order_id,
+            market=market,
+            currency=currency,
             ai_reasoning=ai_reasoning,
             avg_cost_snapshot=avg_cost_snapshot,
         )
@@ -241,6 +262,7 @@ def add_realized_trade(
     avg_cost: float,
     realized_pnl: float,
     realized_pnl_pct: float,
+    currency: str = "USD",
     strategy_id: int | None = None,
 ) -> dict:
     with get_session() as s:
@@ -252,6 +274,7 @@ def add_realized_trade(
             avg_cost=avg_cost,
             realized_pnl=realized_pnl,
             realized_pnl_pct=realized_pnl_pct,
+            currency=currency,
             strategy_id=strategy_id,
         )
         s.add(rt)
@@ -265,8 +288,8 @@ def get_realized_trades(start_date: str, end_date: str) -> list[dict]:
             s.execute(
                 select(RealizedTrade)
                 .where(
-                    func.substr(RealizedTrade.executed_at, 1, 10) >= start_date,
-                    func.substr(RealizedTrade.executed_at, 1, 10) <= end_date,
+                    func.date(RealizedTrade.executed_at) >= start_date,
+                    func.date(RealizedTrade.executed_at) <= end_date,
                 )
                 .order_by(RealizedTrade.executed_at.asc())
             )
@@ -277,13 +300,13 @@ def get_realized_trades(start_date: str, end_date: str) -> list[dict]:
 
 
 def get_partially_filled_logs() -> list[dict]:
-    """alpaca_id가 있는 partially_filled 거래 로그 반환."""
+    """broker_order_id가 있는 partially_filled 거래 로그 반환."""
     with get_session() as s:
         rows = (
             s.execute(
                 select(TradeLog).where(
                     TradeLog.status == "partially_filled",
-                    TradeLog.alpaca_id.isnot(None),
+                    TradeLog.broker_order_id.isnot(None),
                 )
             )
             .scalars()

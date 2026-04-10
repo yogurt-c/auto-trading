@@ -11,7 +11,11 @@ import LoginSetup from './pages/LoginSetup'
 
 function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth()
-  if (isLoading) return null
+  if (isLoading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: '14px' }}>
+      로딩 중...
+    </div>
+  )
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return <Outlet />
 }

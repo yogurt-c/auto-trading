@@ -1,14 +1,17 @@
 """Scheduler + Settings API."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
 from app.application.scheduler import ensure_started, get_status
+from app.infrastructure import kis_client
 from app.infrastructure import repository as db
+from app.infrastructure.config import get_settings
 
 _HIDDEN_KEYS = {"__SECRET_KEY__", "APP_PASSWORD_HASH"}
-_MASKED_KEYS = {"ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ANTHROPIC_API_KEY"}
+_WRITE_BLOCKED_KEYS = {"__SECRET_KEY__", "APP_PASSWORD_HASH"}
+_MASKED_KEYS = {"KIS_APP_KEY", "KIS_APP_SECRET", "ANTHROPIC_API_KEY"}
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -48,23 +51,20 @@ def settings_status():
 
     응답: { ok: bool, reason: 'ok'|'missing'|'invalid', message: str }
     """
-    from app.infrastructure import alpaca_client
-    from app.infrastructure.config import get_settings
-
     s = get_settings()
     if not s.is_configured:
         keys = ", ".join(s.missing_keys)
         return {"ok": False, "reason": "missing", "message": f"미설정 키: {keys}"}
 
     try:
-        alpaca_client.get_account()
-        if not s.alpaca_paper:
+        kis_client.get_account()
+        if not s.kis_paper:
             return {
                 "ok": False,
                 "reason": "live_trading_warning",
                 "message": (
-                    "경고: ALPACA_PAPER가 false로 설정되어 있습니다. "
-                    "이 앱은 페이퍼 트레이딩 전용입니다. Settings에서 true로 변경하세요."
+                    "경고: KIS_PAPER가 false로 설정되어 있습니다. "
+                    "실전 계좌로 실제 주문이 실행됩니다. 주의하세요."
                 ),
             }
         return {"ok": True, "reason": "ok", "message": ""}
@@ -72,13 +72,13 @@ def settings_status():
         return {"ok": False, "reason": "missing", "message": str(e)}
     except Exception as e:
         err = str(e)
-        if "unauthorized" in err.lower():
+        if "인증" in err or "token" in err.lower() or "unauthorized" in err.lower():
             return {
                 "ok": False,
                 "reason": "invalid",
-                "message": "Alpaca API 키가 유효하지 않습니다. Settings 페이지에서 확인해 주세요.",
+                "message": "KIS API 키가 유효하지 않습니다. Settings 페이지에서 확인해 주세요.",
             }
-        return {"ok": False, "reason": "invalid", "message": f"Alpaca 연결 실패: {err}"}
+        return {"ok": False, "reason": "invalid", "message": f"KIS 연결 실패: {err}"}
 
 
 @router.get("/settings")
@@ -103,13 +103,14 @@ class SettingValue(BaseModel):
 @router.put("/settings/{key}")
 def save_setting(key: str, req: SettingValue):
     """설정 저장. API 키 변경 시 클라이언트 리로드."""
+    if key in _WRITE_BLOCKED_KEYS:
+        raise HTTPException(status_code=403, detail="해당 키는 직접 수정할 수 없습니다")
     db.save_setting(key, req.value)
-    if key in ("ANTHROPIC_API_KEY", "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_PAPER"):
-        from app.infrastructure.alpaca_client import reset_client
+    if key in ("ANTHROPIC_API_KEY", "KIS_APP_KEY", "KIS_APP_SECRET", "KIS_ACCOUNT_NO", "KIS_PAPER"):
         from app.infrastructure.config import reload_settings
 
         reload_settings()
-        reset_client()
+        kis_client.reset_client()
     if key in ("scheduler_interval_minutes", "scheduler_enabled"):
         ensure_started()
     return {"success": True}

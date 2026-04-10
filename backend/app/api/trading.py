@@ -1,11 +1,13 @@
-"""Trading API — Alpaca account, orders, logs."""
+"""Trading API — KIS account, orders, logs."""
+
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
 from app.application.tools import place_order as _place_order
-from app.infrastructure import alpaca_client
+from app.infrastructure import kis_client
 from app.infrastructure import repository as db
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -13,37 +15,37 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 @router.get("/trading/account")
 def get_account():
-    """Alpaca 계좌 정보 및 보유 포지션 반환."""
+    """KIS 계좌 정보 및 보유 포지션 반환."""
     try:
-        account = alpaca_client.get_account()
-        positions = alpaca_client.get_positions()
+        account = kis_client.get_account()
+        positions = kis_client.get_positions()
         return {"account": account, "positions": positions}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         err_str = str(e)
-        if "unauthorized" in err_str.lower():
+        if "인증" in err_str or "token" in err_str.lower() or "unauthorized" in err_str.lower():
             raise HTTPException(
                 status_code=401,
-                detail="Alpaca API 인증 실패. Settings 페이지에서 API 키를 확인해 주세요.",
+                detail="KIS API 인증 실패. Settings 페이지에서 API 키와 계좌번호를 확인해 주세요.",
             )
-        raise HTTPException(status_code=503, detail=f"Alpaca API 연결 실패: {err_str}")
+        raise HTTPException(status_code=503, detail=f"KIS API 연결 실패: {err_str}")
 
 
 class OrderRequest(BaseModel):
     ticker: str
-    side: str
+    side: Literal["buy", "sell"]
     qty: float
-    order_type: str = "market"
+    order_type: Literal["market", "limit"] = "market"
     limit_price: float | None = None
     strategy_id: int | None = None
     ai_reasoning: str | None = None
-    max_position_usd: float | None = None
+    max_position: float | None = None
 
 
 @router.post("/trading/orders")
 def place_order(req: OrderRequest):
-    """Alpaca paper trading 주문 실행."""
+    """KIS 주문 실행 (국내/해외 자동 분기)."""
     return _place_order(**req.model_dump())
 
 

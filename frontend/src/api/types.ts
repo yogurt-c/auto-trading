@@ -38,19 +38,31 @@ export interface PortfolioResponse {
 // ── Strategies ─────────────────────────────────────────────────────────────
 
 export type StrategyStatus = 'active' | 'paused' | 'completed'
+export type Market = 'KR' | 'US'
+export type Currency = 'KRW' | 'USD'
 
 export interface Strategy {
   id: number
   name: string
-  symbol: string
+  ticker: string | null
   strategy_type: string
   description: string
   ai_rationale: string | null
+  market: Market
+  currency: Currency
   status: StrategyStatus
-  parameters: Record<string, unknown>
+  entry_price_drop_pct: number | null
+  entry_rsi_below: number | null
+  take_profit_pct: number | null
+  stop_loss_pct: number | null
+  sell_ratio: number | null
+  dca_amount: number | null
+  dca_frequency_days: number | null
+  max_position: number | null
   created_at: string
   last_checked_at: string | null
-  last_run_at: string | null
+  last_triggered_at: string | null
+  updated_at: string
 }
 
 // ── Trading ────────────────────────────────────────────────────────────────

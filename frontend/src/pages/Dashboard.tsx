@@ -8,16 +8,12 @@ import {
 import { portfolioApi } from '../api/endpoints'
 import MetricCard from '../components/MetricCard'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
+import { fmt } from '../lib/format'
 
 const CHART_COLORS = [
   '#6c7cff', '#34d399', '#fbbf24', '#f87171', '#a78bfa',
   '#38bdf8', '#fb923c', '#4ade80', '#f472b6', '#94a3b8',
 ]
-
-function fmt(n: number | null | undefined, decimals = 2, prefix = '') {
-  if (n == null) return '—'
-  return prefix + n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-}
 
 export default function Dashboard() {
   const { data, isLoading, error, refetch } = useQuery({
@@ -61,7 +57,11 @@ export default function Dashboard() {
         </RefreshBtn>
       </Header>
 
-      {error && <ErrorBanner>데이터 로딩 실패: {String(error)}</ErrorBanner>}
+      {error && (
+        <ErrorBanner>
+          데이터 로딩 실패: {(error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '네트워크 오류가 발생했습니다'}
+        </ErrorBanner>
+      )}
 
       {/* 요약 메트릭 */}
       <MetricGrid>

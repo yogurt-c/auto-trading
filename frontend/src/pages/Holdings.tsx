@@ -5,11 +5,7 @@ import DataTable from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import type { Holding, Transaction } from '../api/types'
 import { colors, spacing, fontSize, radius } from '../theme'
-
-function fmt(n: number | null | undefined, decimals = 2, prefix = '') {
-  if (n == null) return '—'
-  return prefix + n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-}
+import { fmt } from '../lib/format'
 
 const holdingColumns: Column<Holding>[] = [
   { key: 'symbol', header: 'Symbol' },
@@ -94,7 +90,7 @@ export default function Holdings() {
 
       {syncMutation.isSuccess && (
         <Banner success>
-          동기화 완료 — {(syncMutation.data as { synced: number }).synced}개 포지션 업데이트됨
+          동기화 완료 — {syncMutation.data?.synced ?? 0}개 포지션 업데이트됨
         </Banner>
       )}
       {syncMutation.isError && (

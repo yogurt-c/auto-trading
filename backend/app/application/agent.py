@@ -10,6 +10,8 @@ Token optimizations:
   - Model tiering: Trade Executor uses Haiku; others use Sonnet
   - Per-agent max_tokens / max_iterations limits
   - Prompt caching on system prompts and tool schemas
+  - Cost logging per API call (debug level)
+  - Retry on transient errors only (RateLimitError, APIConnectionError, InternalServerError)
 """
 
 from __future__ import annotations
@@ -23,22 +25,6 @@ from typing import Any
 import anthropic
 from loguru import logger
 
-_HISTORY_LIMIT = 20  # orchestrator에 전달할 최대 메시지 수
-
-
-def _api_create_with_retry(client: anthropic.Anthropic, **kwargs) -> Any:
-    """429 rate limit 시 최대 3회 지수 백오프 재시도."""
-    for attempt in range(3):
-        try:
-            return client.messages.create(**kwargs)
-        except anthropic.RateLimitError:
-            if attempt == 2:
-                raise
-            wait = 2**attempt * 15  # 15s, 30s
-            logger.warning(f"rate limit hit, retrying in {wait}s (attempt {attempt + 1}/3)")
-            time.sleep(wait)
-
-
 from .tools import (
     PORTFOLIO_TOOLS,
     STRATEGY_TOOLS,
@@ -47,8 +33,58 @@ from .tools import (
     dispatch_tool,
 )
 
+_HISTORY_LIMIT = 20  # orchestrator에 전달할 최대 메시지 수
+
 SONNET = "claude-sonnet-4-6"
 HAIKU = "claude-haiku-4-5-20251001"
+
+# Pricing: (input $/1M tokens, output $/1M tokens) — 2025-2026
+_PRICING: dict[str, tuple[float, float]] = {
+    SONNET: (3.00, 15.00),
+    HAIKU: (0.80, 4.00),
+}
+
+_RETRYABLE_ERRORS = (
+    anthropic.RateLimitError,
+    anthropic.APIConnectionError,
+    anthropic.InternalServerError,
+)
+
+
+def _compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    input_rate, output_rate = _PRICING.get(model, (3.00, 15.00))
+    return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+
+
+def _api_create_with_retry(client: anthropic.Anthropic, **kwargs) -> Any:
+    """Transient errors (rate limit, connection, 5xx): max 3 retries with exponential backoff.
+
+    Fails fast on AuthenticationError, BadRequestError, and other permanent failures.
+    Logs token usage and estimated USD cost after each successful call.
+    """
+    for attempt in range(3):
+        try:
+            response = client.messages.create(**kwargs)
+            model = kwargs.get("model", "unknown")
+            usage = response.usage
+            cost = _compute_cost(model, usage.input_tokens, usage.output_tokens)
+            logger.info(
+                f"api call: model={model} "
+                f"in={usage.input_tokens} out={usage.output_tokens} "
+                f"cost=${cost:.4f}"
+            )
+            return response
+        except _RETRYABLE_ERRORS as e:
+            if attempt == 2:
+                raise
+            wait = 2**attempt * 15  # 15s, 30s
+            logger.warning(
+                f"transient error ({type(e).__name__}), retrying in {wait}s "
+                f"(attempt {attempt + 1}/3)"
+            )
+            time.sleep(wait)
+    raise RuntimeError("_api_create_with_retry: retry loop exhausted without result")
+
 
 # ---------------------------------------------------------------------------
 # System prompts
@@ -78,54 +114,77 @@ Response format:
 """
 
 STRATEGY_ADVISOR_PROMPT = """\
-You are a trading strategy advisor specialized in US equities and ETFs.
-Your goal is to help users build concrete, executable trading strategies.
+You are a trading strategy advisor specialized in Korean and US equities and ETFs.
+Your goal is to help users build concrete, executable trading strategies via KIS (한국투자증권).
+
+Ticker convention:
+- Korean stocks: 6-digit numbers (e.g., 005930 for Samsung) → market=KR, currency=KRW
+- US stocks: alphabetic tickers (e.g., AAPL, TSLA) → market=US, currency=USD
 
 Workflow:
 1. Discuss the strategy with the user (entry conditions, exit conditions, position sizing)
 2. Use web_search to research the ticker if needed
-3. Summarize the agreed strategy clearly
-4. Call save_strategy to persist the structured parameters
-5. Confirm the strategy was saved, show the key parameters,
-   and if warnings were returned include them in your response
+3. Identify the correct market (KR/US) and currency (KRW/USD) from the ticker
+4. Summarize the agreed strategy clearly
+5. Call save_strategy to persist the structured parameters
+6. Confirm the strategy was saved — show key parameters in a table including market and currency
 
 Always extract these structured fields when possible:
-- entry_price_drop_pct (e.g., buy on -5% dip)
+- entry_price_drop_pct (e.g., buy on -5% dip from 30d high)
 - take_profit_pct / stop_loss_pct
-- dca_amount_usd + dca_frequency_days for DCA strategies
-- max_position_usd to cap total exposure
+- dca_amount + dca_frequency_days for DCA strategies (amount in currency units)
+- max_position to cap total exposure (in currency units)
+- market: 'KR' or 'US'
+- currency: 'KRW' or 'USD'
 
 Be proactive about risk management: always recommend a stop-loss.
 
 Response format:
 - Use clean markdown only (headers, bold, tables, bullet lists)
 - Do not use any emoji or icons in your responses
+- When confirming a saved strategy, always include a parameter table:
+
+| 항목 | 값 |
+|------|---|
+| 시장 | KR / US |
+| 통화 | KRW / USD |
+| 진입 조건 | ... |
+| 익절 | ... |
+| 손절 | ... |
+| DCA 금액 | ₩50,000 or $50 |
+| 최대 포지션 | ₩1,000,000 or $1,000 |
 """
 
 TRADE_EXECUTOR_PROMPT = """\
-You are an automated trade execution agent for paper trading.
+You are an automated trade execution agent using KIS (한국투자증권) API.
 Your job is to review active strategies and execute orders when conditions are met.
+
+Ticker convention:
+- Korean stocks (market=KR): 6-digit numbers (e.g., 005930). Trading hours: KST 09:00-15:30
+- US stocks (market=US): alphabetic tickers (e.g., AAPL). Trading hours: ET 09:30-16:00
 
 Workflow:
 1. Call get_scheduler_runs(limit=10) to review recent execution history
    - Check if previous runs successfully executed planned strategies
    - Identify any patterns of missed signals or repeated failures
 2. Call get_strategies(status='active') to get all active strategies
-3. Call get_alpaca_account() to check current positions and buying power
+3. Call get_broker_account() to check current positions and buying power
 4. For each strategy, call evaluate_strategy(strategy_id) to check conditions
    - For DCA strategies: also call check_dca_due(strategy_id); only proceed if is_due is true
    - Do NOT use web_search to manually fetch prices or compute conditions
 5. If evaluate_strategy returns entry_triggered=true or exit_triggered=true, call place_order
-   - Always pass max_position_usd from the strategy if it is set
+   - Always pass max_position from the strategy if it is set
+   - Check market hours before placing: KR strategies only during KST 09:00-15:30,
+     US strategies only during ET 09:30-16:00
 6. In your summary, mention: which strategies were checked, what conditions
    were evaluated, which orders were placed, and any concerns about strategy
    execution consistency based on historical runs.
 
 Rules:
-- NEVER exceed max_position_usd per strategy
+- NEVER exceed max_position per strategy (amounts are in the strategy's currency: KRW or USD)
 - Always include ai_reasoning explaining why the order was triggered
 - If conditions are ambiguous, err on the side of NOT trading
-- Only trade during market hours (NYSE: 9:30am-4pm ET)
+- For KIS paper trading (모의투자): overseas stock orders may not be supported
 
 응답 형식:
 - 반드시 한국어로 작성하세요
@@ -135,8 +194,9 @@ Rules:
 
 ## 실행 요약
 ## 전략 평가 결과
-| 전략명 | 조건 | 결과 | 조치 |
+| 전략명 | 시장 | 조건 | 결과 | 조치 |
 ## 주문 내역
+| 종목 | 시장 | 유형 | 수량 | 가격 | 통화 | 상태 |
 ## 리스크 및 주의사항
 """
 
@@ -189,7 +249,7 @@ SUBAGENTS: dict[str, SubAgentDef] = {
         max_iterations=6,
     ),
     "trade-executor": SubAgentDef(
-        description="Automated trade executor. Checks strategy conditions and places Alpaca orders.",  # noqa: E501
+        description="Automated trade executor. Checks strategy conditions and places KIS orders (KR/US stocks).",  # noqa: E501
         system_prompt=TRADE_EXECUTOR_PROMPT,
         tools=[*TRADE_TOOLS, WEB_SEARCH_TOOL],
         model=HAIKU,  # Haiku: rule-based execution, no complex reasoning needed
@@ -257,7 +317,7 @@ def _tool_status(tool_name: str, tool_input: dict) -> str:
         "evaluate_strategy": "전략 조건 평가 중...",
         "place_order": "주문 실행 중...",
         "save_strategy": "전략 저장 중...",
-        "get_alpaca_account": "계좌 정보 조회 중...",
+        "get_broker_account": "계좌 정보 조회 중...",
         "check_dca_due": "DCA 일정 확인 중...",
         "get_scheduler_runs": "스케줄러 이력 조회 중...",
     }
@@ -409,7 +469,7 @@ def _run_subagent(agent_name: str, task: str) -> dict:
 def stream_orchestrator(
     user_message: str,
     history: list[dict],
-) -> Generator[str, None, None]:
+) -> Generator[dict, None, None]:
     """
     Stream orchestrator response for a new user message.
     history: list of {"role": "user"|"assistant", "content": str}
@@ -436,13 +496,16 @@ def run_trade_executor() -> str:
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
+    now_kst = datetime.now(ZoneInfo("Asia/Seoul"))
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    et_str = now_et.strftime("%Y-%m-%d %H:%M ET (%A)")
+    kst_str = now_kst.strftime("%Y-%m-%d %H:%M KST (%A)")
+    et_str = now_et.strftime("%H:%M ET")
 
     task = (
-        f"Current time: {et_str}\n\n"
+        f"Current time: {kst_str} / {et_str}\n\n"
         "Review all active strategies, check current market conditions, "
-        "and execute any triggered orders."
+        "and execute any triggered orders. "
+        "KR strategies trade KST 09:00-15:30, US strategies trade ET 09:30-16:00."
     )
 
     logger.info("run_trade_executor started")

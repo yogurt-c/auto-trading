@@ -1,7 +1,7 @@
 """Integration tests for Portfolio API endpoints.
 
 DB: real Alembic SQLite (data/test.db)
-External: core.market.get_current_prices and core.alpaca_client are mocked.
+External: core.market.get_current_prices and core.kis_client are mocked.
 """
 
 from unittest.mock import patch
@@ -101,7 +101,7 @@ def test_get_holdings(auth_client, db_holding):
 
 
 def test_get_transactions(auth_client):
-    """GET /api/portfolio/transactions → Alpaca 체결 주문 이력 반환."""
+    """GET /api/portfolio/transactions → KIS 체결 주문 이력 반환."""
     mock_orders = [
         {
             "id": "abc-123",
@@ -113,7 +113,7 @@ def test_get_transactions(auth_client):
             "executed_at": "2026-03-18T10:30:00+09:00",
         }
     ]
-    with patch("app.api.portfolio.alpaca_client.get_filled_orders", return_value=mock_orders):
+    with patch("app.api.portfolio.kis_client.get_filled_orders", return_value=mock_orders):
         resp = auth_client.get("/api/portfolio/transactions")
     assert resp.status_code == 200
     data = resp.json()
@@ -131,7 +131,7 @@ def test_get_transactions(auth_client):
 
 def test_get_transactions_limit_param(auth_client):
     """GET /api/portfolio/transactions?limit=10 → limit 파라미터 수용."""
-    with patch("app.api.portfolio.alpaca_client.get_filled_orders", return_value=[]) as mock_fn:
+    with patch("app.api.portfolio.kis_client.get_filled_orders", return_value=[]) as mock_fn:
         resp = auth_client.get("/api/portfolio/transactions?limit=10")
     assert resp.status_code == 200
     mock_fn.assert_called_once_with(limit=10)
@@ -140,7 +140,7 @@ def test_get_transactions_limit_param(auth_client):
 def test_get_transactions_alpaca_failure(auth_client):
     """Alpaca 오류 시 503 반환."""
     with patch(
-        "app.api.portfolio.alpaca_client.get_filled_orders", side_effect=Exception("Alpaca error")
+        "app.api.portfolio.kis_client.get_filled_orders", side_effect=Exception("KIS error")
     ):
         resp = auth_client.get("/api/portfolio/transactions")
     assert resp.status_code == 503
@@ -149,16 +149,18 @@ def test_get_transactions_alpaca_failure(auth_client):
 def test_get_transactions_alpaca_key_missing(auth_client):
     """Alpaca API 키 미설정 시 400 반환."""
     with patch(
-        "app.api.portfolio.alpaca_client.get_filled_orders", side_effect=ValueError("API 키 없음")
+        "app.api.portfolio.kis_client.get_filled_orders", side_effect=ValueError("API 키 없음")
     ):
         resp = auth_client.get("/api/portfolio/transactions")
     assert resp.status_code == 400
 
 
 def test_sync_holdings_success(auth_client):
-    """POST /api/portfolio/sync → Alpaca mock 성공."""
-    mock_positions = [{"ticker": "AAPL", "qty": 5.0, "avg_entry_price": 150.0}]
-    with patch("app.api.portfolio.alpaca_client.sync_positions", return_value=mock_positions):
+    """POST /api/portfolio/sync → KIS mock 성공."""
+    mock_positions = [
+        {"ticker": "AAPL", "qty": 5.0, "avg_entry_price": 150.0, "market": "US", "currency": "USD"}
+    ]
+    with patch("app.api.portfolio.kis_client.sync_positions", return_value=mock_positions):
         resp = auth_client.post("/api/portfolio/sync")
     assert resp.status_code == 200
     data = resp.json()
@@ -168,9 +170,7 @@ def test_sync_holdings_success(auth_client):
 
 
 def test_sync_holdings_failure(auth_client):
-    """POST /api/portfolio/sync → Alpaca 오류 시 503 반환."""
-    with patch(
-        "app.api.portfolio.alpaca_client.sync_positions", side_effect=Exception("Alpaca error")
-    ):
+    """POST /api/portfolio/sync → KIS 오류 시 503 반환."""
+    with patch("app.api.portfolio.kis_client.sync_positions", side_effect=Exception("KIS error")):
         resp = auth_client.post("/api/portfolio/sync")
     assert resp.status_code == 503

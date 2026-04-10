@@ -36,8 +36,6 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:8501",  # Streamlit (호환)
-        "http://localhost:46131",  # 기존 개발환경
         "http://localhost:5173",  # Vite dev server
         "http://localhost:4173",  # Vite preview
     ],

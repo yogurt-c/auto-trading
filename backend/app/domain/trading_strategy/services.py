@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-_KST = ZoneInfo("Asia/Seoul")
-
 from .value_objects import (
     EvaluationResult,
     MarketData,
     ValidationWarning,
 )
+
+_KST = ZoneInfo("Asia/Seoul")
 
 
 class StrategyValidator:
@@ -25,9 +25,9 @@ class StrategyValidator:
         take_profit_pct: float | None,
         stop_loss_pct: float | None,
         sell_ratio: float | None,
-        dca_amount_usd: float | None,
+        dca_amount: float | None,
         dca_frequency_days: int | None,
-        max_position_usd: float | None,
+        max_position: float | None,
     ) -> list[ValidationWarning]:
         """Validate strategy params for range/conflict issues.
 
@@ -97,23 +97,19 @@ class StrategyValidator:
                 )
             )
 
-        if (
-            dca_amount_usd is not None
-            and max_position_usd is not None
-            and dca_amount_usd > max_position_usd
-        ):
+        if dca_amount is not None and max_position is not None and dca_amount > max_position:
             warnings.append(
                 ValidationWarning(
                     message=(
-                        f"dca_amount_usd({dca_amount_usd}) > max_position_usd({max_position_usd}): "
+                        f"dca_amount({dca_amount}) > max_position({max_position}): "
                         "첫 번째 DCA 매수만으로 포지션 한도를 초과합니다."
                     )
                 )
             )
 
-        if strategy_type == "dca" and dca_amount_usd is None:
+        if strategy_type == "dca" and dca_amount is None:
             warnings.append(
-                ValidationWarning(message="DCA 전략인데 dca_amount_usd가 설정되지 않았습니다.")
+                ValidationWarning(message="DCA 전략인데 dca_amount가 설정되지 않았습니다.")
             )
 
         if strategy_type == "dca" and dca_frequency_days is None:

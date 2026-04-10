@@ -6,8 +6,9 @@ import { settingsApi, authApi } from '../api/endpoints'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
 
 const SETTING_FIELDS = [
-  { key: 'ALPACA_API_KEY', label: 'Alpaca API Key', type: 'password' },
-  { key: 'ALPACA_SECRET_KEY', label: 'Alpaca Secret Key', type: 'password' },
+  { key: 'KIS_APP_KEY', label: 'KIS App Key', type: 'password' },
+  { key: 'KIS_APP_SECRET', label: 'KIS App Secret', type: 'password' },
+  { key: 'KIS_ACCOUNT_NO', label: 'KIS 계좌번호 (예: 12345678-01)', type: 'text' },
   { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', type: 'password' },
 ]
 
@@ -32,8 +33,9 @@ export default function Settings() {
       setToast('비밀번호가 변경되었습니다')
       setTimeout(() => setToast(null), 2500)
     },
-    onError: (e: any) => {
-      setPwError(e?.response?.data?.detail ?? '비밀번호 변경에 실패했습니다')
+    onError: (e: unknown) => {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setPwError(detail ?? '비밀번호 변경에 실패했습니다')
     },
   })
 
@@ -58,11 +60,11 @@ export default function Settings() {
     pwMutation.mutate()
   }
 
-  const isPaper = settings?.['ALPACA_PAPER'] !== 'false'
+  const isPaper = settings?.['KIS_PAPER'] !== 'false'
 
   const paperMutation = useMutation({
     mutationFn: (paper: boolean) =>
-      settingsApi.set('ALPACA_PAPER', paper ? 'true' : 'false'),
+      settingsApi.set('KIS_PAPER', paper ? 'true' : 'false'),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] })
       setToast('거래 모드가 변경되었습니다')
@@ -82,11 +84,9 @@ export default function Settings() {
   })
 
   const handleSave = async () => {
-    for (const [key, value] of Object.entries(form)) {
-      if (value.trim()) {
-        await mutation.mutateAsync({ key, value: value.trim() })
-      }
-    }
+    const entries = Object.entries(form).filter(([, value]) => value.trim())
+    if (entries.length === 0) return
+    await Promise.all(entries.map(([key, value]) => mutation.mutateAsync({ key, value: value.trim() })))
   }
 
   const get = (key: string) => form[key] ?? ''

@@ -24,9 +24,9 @@ export default function LoginSetup() {
     }
   }, [isAuthenticated, navigate])
 
-  // 설정 여부 확인 (localStorage 캐시 우선)
+  // 설정 여부 확인 (sessionStorage 캐시 우선)
   useEffect(() => {
-    const cached = localStorage.getItem('app_configured')
+    const cached = sessionStorage.getItem('app_configured')
     if (cached === 'true') {
       setMode('login')
       return
@@ -35,7 +35,7 @@ export default function LoginSetup() {
       .status()
       .then(({ configured }) => {
         if (configured) {
-          localStorage.setItem('app_configured', 'true')
+          sessionStorage.setItem('app_configured', 'true')
           setMode('login')
         } else {
           setMode('setup')
@@ -61,11 +61,12 @@ export default function LoginSetup() {
     setIsSubmitting(true)
     try {
       const data = await authApi.setup(password)
-      localStorage.setItem('auth_token', data.access_token)
-      localStorage.setItem('app_configured', 'true')
+      sessionStorage.setItem('auth_token', data.access_token)
+      sessionStorage.setItem('app_configured', 'true')
       navigate('/dashboard', { replace: true })
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? '설정에 실패했습니다')
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail ?? '설정에 실패했습니다')
     } finally {
       setIsSubmitting(false)
     }
@@ -81,8 +82,9 @@ export default function LoginSetup() {
     try {
       await login(password)
       navigate('/dashboard', { replace: true })
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? '로그인에 실패했습니다')
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail ?? '로그인에 실패했습니다')
     } finally {
       setIsSubmitting(false)
     }

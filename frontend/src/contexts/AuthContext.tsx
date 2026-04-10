@@ -12,7 +12,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('auth_token'))
+  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('auth_token'))
   const [isLoading, setIsLoading] = useState(true)
 
   // 앱 초기화: 저장된 토큰 유효성 확인
@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .me()
       .then(() => setIsLoading(false))
       .catch(() => {
-        localStorage.removeItem('auth_token')
+        sessionStorage.removeItem('auth_token')
         setToken(null)
         setIsLoading(false)
       })
@@ -33,13 +33,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (password: string) => {
     const data = await authApi.login(password)
-    localStorage.setItem('auth_token', data.access_token)
-    localStorage.setItem('app_configured', 'true')
+    sessionStorage.setItem('auth_token', data.access_token)
+    sessionStorage.setItem('app_configured', 'true')
     setToken(data.access_token)
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem('auth_token')
+    sessionStorage.removeItem('auth_token')
+    sessionStorage.removeItem('app_configured')
     setToken(null)
   }, [])
 

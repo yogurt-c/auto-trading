@@ -13,7 +13,7 @@ export async function* streamChat(
   message: string,
   history: ChatMessage[]
 ): AsyncGenerator<StreamChunk> {
-  const token = localStorage.getItem('auth_token')
+  const token = sessionStorage.getItem('auth_token')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`

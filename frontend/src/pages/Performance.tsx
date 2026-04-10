@@ -7,6 +7,7 @@ import {
 import { performanceApi } from '../api/endpoints'
 import MetricCard from '../components/MetricCard'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
+import { fmt } from '../lib/format'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,12 +23,6 @@ function offsetDate(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function fmt(n: number, decimals = 2, prefix = '') {
-  return prefix + n.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-}
 
 // ---------------------------------------------------------------------------
 // Types

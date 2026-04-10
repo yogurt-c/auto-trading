@@ -6,8 +6,11 @@ Tool schemas (for Anthropic tool_use) are also defined here.
 
 from __future__ import annotations
 
+import math
+import threading
 from typing import Any
 
+import yfinance as yf
 from loguru import logger
 
 from app.domain.portfolio.services import PortfolioValuationService, RealizedPnlAggregator
@@ -17,7 +20,7 @@ from app.domain.trading_strategy.services import (
     StrategyValidator,
 )
 from app.domain.trading_strategy.value_objects import MarketData
-from app.infrastructure import alpaca_client
+from app.infrastructure import kis_client
 from app.infrastructure import market as market_data
 from app.infrastructure import repository as db
 
@@ -26,6 +29,9 @@ _strategy_evaluator = StrategyEvaluator()
 _dca_checker = DcaScheduleChecker()
 _valuation_service = PortfolioValuationService()
 _pnl_aggregator = RealizedPnlAggregator()
+
+# place_order는 체크 → 주문 사이에 TOCTOU 경쟁이 발생하지 않도록 직렬화
+_order_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -40,13 +46,13 @@ def get_portfolio() -> dict:
 
 
 def sync_holdings() -> dict:
-    """Alpaca 전체 포지션으로 holdings 테이블을 즉시 재구성."""
+    """KIS 전체 포지션으로 holdings 테이블을 즉시 재구성."""
     try:
-        positions = alpaca_client.sync_positions()
-        logger.info(f"holdings synced from Alpaca: {len(positions)} positions")
+        positions = kis_client.sync_positions()
+        logger.info(f"holdings synced from KIS: {len(positions)} positions")
         return {"success": True, "synced_count": len(positions), "holdings": positions}
     except Exception as e:
-        logger.warning(f"Alpaca sync failed, holdings unchanged: {e}")
+        logger.warning(f"KIS sync failed, holdings unchanged: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -66,9 +72,9 @@ def _validate_strategy_params(
     take_profit_pct: float | None,
     stop_loss_pct: float | None,
     sell_ratio: float | None,
-    dca_amount_usd: float | None,
+    dca_amount: float | None,
     dca_frequency_days: int | None,
-    max_position_usd: float | None,
+    max_position: float | None,
 ) -> list[str]:
     """전략 파라미터 충돌·범위 검증. 경고 메시지 목록 반환."""
     domain_warnings = _strategy_validator.validate(
@@ -78,9 +84,9 @@ def _validate_strategy_params(
         take_profit_pct=take_profit_pct,
         stop_loss_pct=stop_loss_pct,
         sell_ratio=sell_ratio,
-        dca_amount_usd=dca_amount_usd,
+        dca_amount=dca_amount,
         dca_frequency_days=dca_frequency_days,
-        max_position_usd=max_position_usd,
+        max_position=max_position,
     )
     return [w.message for w in domain_warnings]
 
@@ -91,17 +97,27 @@ def save_strategy(
     description: str = "",
     ticker: str | None = None,
     ai_rationale: str | None = None,
+    market: str = "US",
+    currency: str = "USD",
     entry_price_drop_pct: float | None = None,
     entry_rsi_below: float | None = None,
     take_profit_pct: float | None = None,
     stop_loss_pct: float | None = None,
     sell_ratio: float | None = None,
-    dca_amount_usd: float | None = None,
+    dca_amount: float | None = None,
     dca_frequency_days: int | None = None,
-    max_position_usd: float | None = None,
+    max_position: float | None = None,
     strategy_id: int | None = None,
 ) -> dict:
     """Save or update a trading strategy in the database."""
+    # ticker로 market/currency 자동 추론 (명시적 전달이 없을 때 보정)
+    if ticker:
+        inferred_market = kis_client.ticker_market(ticker)
+        inferred_currency = kis_client.ticker_currency(ticker)
+        if market == "US" and inferred_market == "KR":
+            market = inferred_market
+            currency = inferred_currency
+
     warnings = _validate_strategy_params(
         strategy_type=strategy_type,
         entry_price_drop_pct=entry_price_drop_pct,
@@ -109,9 +125,9 @@ def save_strategy(
         take_profit_pct=take_profit_pct,
         stop_loss_pct=stop_loss_pct,
         sell_ratio=sell_ratio,
-        dca_amount_usd=dca_amount_usd,
+        dca_amount=dca_amount,
         dca_frequency_days=dca_frequency_days,
-        max_position_usd=max_position_usd,
+        max_position=max_position,
     )
     for w in warnings:
         logger.warning(w)
@@ -121,14 +137,16 @@ def save_strategy(
         description=description,
         ticker=ticker,
         ai_rationale=ai_rationale,
+        market=market,
+        currency=currency,
         entry_price_drop_pct=entry_price_drop_pct,
         entry_rsi_below=entry_rsi_below,
         take_profit_pct=take_profit_pct,
         stop_loss_pct=stop_loss_pct,
         sell_ratio=sell_ratio,
-        dca_amount_usd=dca_amount_usd,
+        dca_amount=dca_amount,
         dca_frequency_days=dca_frequency_days,
-        max_position_usd=max_position_usd,
+        max_position=max_position,
         strategy_id=strategy_id,
     )
     return {"success": True, "strategy": result, "warnings": warnings}
@@ -142,6 +160,17 @@ def update_strategy_status(strategy_id: int, status: str) -> dict:
     return {"success": False, "error": f"Strategy {strategy_id} not found"}
 
 
+def _to_yf_ticker(ticker: str) -> str:
+    """KIS 종목코드 → yfinance 티커 변환.
+
+    국내(6자리 숫자): KOSPI 기준 '.KS' 접미사 추가
+    해외: 그대로 사용
+    """
+    if kis_client.is_korean_ticker(ticker):
+        return f"{ticker}.KS"
+    return ticker
+
+
 def evaluate_strategy(strategy_id: int) -> dict:
     """
     전략의 진입/청산 조건을 현재가 기준으로 평가.
@@ -149,12 +178,7 @@ def evaluate_strategy(strategy_id: int) -> dict:
     - entry_rsi_below: 14일 RSI 계산
     - take_profit_pct / stop_loss_pct: 보유 평균단가 대비 수익률
     """
-    import math
-
-    import yfinance as yf
-
-    strategies = db.get_strategies()
-    strategy = next((s for s in strategies if s["id"] == strategy_id), None)
+    strategy = db.get_strategy_by_id(strategy_id)
     if strategy is None:
         return {"error": f"Strategy {strategy_id} not found"}
 
@@ -162,18 +186,19 @@ def evaluate_strategy(strategy_id: int) -> dict:
     if not ticker:
         return {"error": "Strategy has no ticker set"}
 
+    yf_ticker = _to_yf_ticker(ticker)
     try:
-        data = yf.download(ticker, period="60d", interval="1d", progress=False, auto_adjust=True)
+        data = yf.download(yf_ticker, period="60d", interval="1d", progress=False, auto_adjust=True)
     except Exception as e:
-        return {"error": f"Failed to fetch price data for {ticker}: {e}"}
+        return {"error": f"Failed to fetch price data for {ticker} ({yf_ticker}): {e}"}
     if data.empty:
-        return {"error": f"Could not fetch price data for {ticker}"}
+        return {"error": f"Could not fetch price data for {ticker} ({yf_ticker})"}
 
     # I/O: current price and 30-day high
     current_price = float(data["Close"].squeeze().iloc[-1])
     high_30d = float(data["High"].squeeze().tail(30).max())
 
-    # I/O: RSI calculation (pandas preprocessing stays here)
+    # I/O: RSI calculation
     closes = data["Close"].squeeze()
     delta = closes.diff()
     gain = delta.clip(lower=0).rolling(14).mean()
@@ -182,14 +207,20 @@ def evaluate_strategy(strategy_id: int) -> dict:
     rsi_series = 100 - 100 / (1 + rs)
     rsi = float(rsi_series.iloc[-1])
     if math.isnan(rsi):
-        rsi = 50.0  # gain=0, loss=0 (가격 변동 없음) → 중립값
+        rsi = 50.0
 
     # I/O: current holding from DB
     holdings = db.get_all_holdings()
     current_holding = next((h for h in holdings if h["ticker"] == ticker.upper()), None)
 
-    # Assemble MarketData and delegate pure evaluation to domain service
-    mkt = MarketData(ticker=ticker, current_price=current_price, high_30d=high_30d, rsi_14=rsi)
+    currency = strategy.get("currency", "USD")
+    mkt = MarketData(
+        ticker=ticker,
+        current_price=current_price,
+        currency=currency,
+        high_30d=high_30d,
+        rsi_14=rsi,
+    )
     result = _strategy_evaluator.evaluate(strategy, mkt, current_holding)
 
     logger.debug(
@@ -199,11 +230,11 @@ def evaluate_strategy(strategy_id: int) -> dict:
     return result.model_dump()
 
 
-def get_alpaca_account() -> dict:
-    """Return Alpaca paper trading account info and open positions."""
+def get_broker_account() -> dict:
+    """Return KIS account info and open positions."""
     try:
-        account = alpaca_client.get_account()
-        positions = alpaca_client.get_positions()
+        account = kis_client.get_account()
+        positions = kis_client.get_positions()
         return {"account": account, "positions": positions}
     except Exception as e:
         return {"error": str(e)}
@@ -216,8 +247,7 @@ def check_dca_due(strategy_id: int) -> dict:
     - last_triggered_at이 None이면 한 번도 실행 안 됐으므로 즉시 실행
     - (now - last_triggered_at) >= dca_frequency_days 이면 실행
     """
-    strategies = db.get_strategies()
-    strategy = next((s for s in strategies if s["id"] == strategy_id), None)
+    strategy = db.get_strategy_by_id(strategy_id)
     if strategy is None:
         return {"error": f"Strategy {strategy_id} not found"}
 
@@ -253,14 +283,14 @@ def get_performance(start_date: str, end_date: str, group_by: str = "day") -> di
     }
 
 
-def _sync_from_alpaca() -> str:
-    """주문 완료 후 Alpaca 전체 포지션으로 holdings를 재구성."""
+def _sync_from_broker() -> str:
+    """주문 완료 후 KIS 전체 포지션으로 holdings를 재구성."""
     try:
-        positions = alpaca_client.sync_positions()
-        logger.info(f"holdings synced from Alpaca: {len(positions)} positions")
-        return f"synced {len(positions)} positions from Alpaca"
+        positions = kis_client.sync_positions()
+        logger.info(f"holdings synced from KIS: {len(positions)} positions")
+        return f"synced {len(positions)} positions from KIS"
     except Exception as e:
-        logger.warning(f"Alpaca sync failed, holdings unchanged: {e}")
+        logger.warning(f"KIS sync failed, holdings unchanged: {e}")
         return f"sync failed: {e}"
 
 
@@ -272,16 +302,44 @@ def place_order(
     limit_price: float | None = None,
     strategy_id: int | None = None,
     ai_reasoning: str | None = None,
-    max_position_usd: float | None = None,
+    max_position: float | None = None,
 ) -> dict:
     """
-    Place a buy or sell order on Alpaca paper trading and log it.
+    Place a buy or sell order via KIS and log it.
     side: 'buy' | 'sell'
     order_type: 'market' | 'limit'
-    max_position_usd: if set, rejects buy orders that would exceed this position size
+    max_position: if set, rejects buy orders exceeding this size (strategy currency 단위)
+
+    _order_lock으로 직렬화하여 max_position 체크 → 주문 제출 사이의 TOCTOU 경쟁을 방지.
     """
-    # max_position_usd 한도 검증 (매수 시에만)
-    if max_position_usd and side.lower() == "buy":
+    with _order_lock:
+        return _place_order_locked(
+            ticker=ticker,
+            side=side,
+            qty=qty,
+            order_type=order_type,
+            limit_price=limit_price,
+            strategy_id=strategy_id,
+            ai_reasoning=ai_reasoning,
+            max_position=max_position,
+        )
+
+
+def _place_order_locked(
+    ticker: str,
+    side: str,
+    qty: float,
+    order_type: str = "market",
+    limit_price: float | None = None,
+    strategy_id: int | None = None,
+    ai_reasoning: str | None = None,
+    max_position: float | None = None,
+) -> dict:
+    market = kis_client.ticker_market(ticker)
+    currency = kis_client.ticker_currency(ticker)
+
+    # max_position 한도 검증 (매수 시에만)
+    if max_position and side.lower() == "buy":
         check_price = limit_price
         if check_price is None:
             prices = market_data.get_current_prices([ticker.upper()])
@@ -294,18 +352,18 @@ def place_order(
             order_value = qty * check_price
             projected_value = current_value + order_value
 
-            if projected_value > max_position_usd:
+            if projected_value > max_position:
                 detail = (
-                    f"현재 {current_value:.2f} USD + 신규 {order_value:.2f} USD "
-                    f"= {projected_value:.2f} USD (한도 {max_position_usd:.2f} USD)"
+                    f"현재 {current_value:,.0f} + 신규 {order_value:,.0f} "
+                    f"= {projected_value:,.0f} (한도 {max_position:,.0f} {currency})"
                 )
-                logger.warning(f"order rejected — max_position_usd exceeded: {detail}")
+                logger.warning(f"order rejected — max_position exceeded: {detail}")
                 return {
                     "success": False,
-                    "error": f"max_position_usd 한도 초과: {detail}",
+                    "error": f"max_position 한도 초과: {detail}",
                 }
 
-    # 매도 시 avg_cost 미리 조회 (Alpaca sync 이전에 수행해야 정확한 값 보장)
+    # 매도 시 avg_cost 미리 조회
     avg_cost: float | None = None
     if side.lower() == "sell":
         holdings = db.get_all_holdings()
@@ -313,7 +371,7 @@ def place_order(
         avg_cost = holding["avg_price"] if holding else None
 
     try:
-        order = alpaca_client.place_order(
+        order = kis_client.place_order(
             ticker=ticker,
             side=side,
             qty=qty,
@@ -330,7 +388,9 @@ def place_order(
             strategy_id=strategy_id,
             limit_price=limit_price,
             filled_price=filled_price,
-            alpaca_id=order["alpaca_id"],
+            broker_order_id=order.get("broker_order_id"),
+            market=market,
+            currency=currency,
             ai_reasoning=ai_reasoning,
             avg_cost_snapshot=avg_cost if side.lower() == "sell" else None,
         )
@@ -353,15 +413,16 @@ def place_order(
                 avg_cost=avg_cost,
                 realized_pnl=pnl,
                 realized_pnl_pct=pnl_pct,
+                currency=currency,
                 strategy_id=strategy_id,
             )
             logger.info(
                 f"realized_trade saved: {ticker} qty={qty} "
-                f"sell={filled_price} cost={avg_cost} pnl={pnl:.2f}"
+                f"sell={filled_price} cost={avg_cost} pnl={pnl:.2f} {currency}"
             )
 
         # holdings DB 동기화
-        holdings_synced = _sync_from_alpaca()
+        holdings_synced = _sync_from_broker()
         logger.info(f"place_order success: {side} {qty} {ticker}, sync={holdings_synced}")
 
         return {
@@ -380,6 +441,8 @@ def place_order(
             status="failed",
             strategy_id=strategy_id,
             limit_price=limit_price,
+            market=market,
+            currency=currency,
             ai_reasoning=f"Error: {e}",
         )
         return {"success": False, "error": str(e)}
@@ -391,12 +454,15 @@ def place_order(
 
 
 def sync_pending_orders() -> int:
-    """partially_filled 주문을 Alpaca에서 현재 상태로 갱신. 업데이트된 건수 반환."""
+    """partially_filled 주문을 KIS에서 현재 상태로 갱신. 업데이트된 건수 반환."""
     logs = db.get_partially_filled_logs()
     updated = 0
     for log in logs:
         try:
-            order = alpaca_client.get_order(log["alpaca_id"])
+            order = kis_client.get_order(
+                log["broker_order_id"],
+                market=log.get("market", "US"),
+            )
             new_status = order["status"]
             if new_status != "partially_filled":
                 filled_price = order.get("filled_avg_price")
@@ -410,7 +476,7 @@ def sync_pending_orders() -> int:
                     f"partially_filled → {new_status}"
                 )
 
-                # 매도 체결 시 realized_trade 생성 (avg_cost_snapshot이 저장된 경우)
+                # 매도 체결 시 realized_trade 생성
                 avg_cost_snap = log.get("avg_cost_snapshot")
                 if (
                     new_status == "filled"
@@ -430,6 +496,7 @@ def sync_pending_orders() -> int:
                         avg_cost=avg_cost_snap,
                         realized_pnl=pnl,
                         realized_pnl_pct=pnl_pct,
+                        currency=log.get("currency", "USD"),
                         strategy_id=log.get("strategy_id"),
                     )
                     logger.info(
@@ -439,7 +506,7 @@ def sync_pending_orders() -> int:
 
                 updated += 1
         except Exception as e:
-            logger.warning(f"sync order {log['alpaca_id']} failed: {e}")
+            logger.warning(f"sync order {log.get('broker_order_id')} failed: {e}")
     return updated
 
 
@@ -454,7 +521,7 @@ TOOL_MAP = {
     "save_strategy": save_strategy,
     "update_strategy_status": update_strategy_status,
     "evaluate_strategy": evaluate_strategy,
-    "get_alpaca_account": get_alpaca_account,
+    "get_broker_account": get_broker_account,
     "place_order": place_order,
     "check_dca_due": check_dca_due,
     "get_scheduler_runs": get_scheduler_runs,
@@ -480,13 +547,13 @@ def dispatch_tool(name: str, inputs: dict) -> Any:
 PORTFOLIO_TOOLS = [
     {
         "name": "get_portfolio",
-        "description": "Return all holdings in the portfolio with ticker, shares, avg_price, created_at.",  # noqa: E501
+        "description": "Return all holdings in the portfolio with ticker, shares, avg_price, market, currency, created_at.",  # noqa: E501
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "sync_holdings",
         "description": (
-            "Sync holdings table from Alpaca positions (single source of truth). "
+            "Sync holdings table from KIS positions (single source of truth). "
             "Call this to get the latest holdings before analysis."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
@@ -529,15 +596,25 @@ STRATEGY_TOOLS = [
                 },
                 "ticker": {
                     "type": "string",
-                    "description": "Target ticker (null = whole portfolio)",
+                    "description": "Target ticker. 국내: 6자리 숫자(005930), 미국: 영문(AAPL)",
                 },
                 "ai_rationale": {
                     "type": "string",
                     "description": "AI's reasoning for this strategy",
                 },
+                "market": {
+                    "type": "string",
+                    "enum": ["KR", "US"],
+                    "description": "시장 구분. ticker가 6자리 숫자이면 KR, 영문이면 US",
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": ["KRW", "USD"],
+                    "description": "금액 단위. KR 시장은 KRW, US 시장은 USD",
+                },
                 "entry_price_drop_pct": {
                     "type": "number",
-                    "description": "Buy trigger: % drop from current price (negative, e.g. -5.0)",
+                    "description": "Buy trigger: % drop from 30d high (negative, e.g. -5.0)",
                 },
                 "entry_rsi_below": {
                     "type": "number",
@@ -555,11 +632,14 @@ STRATEGY_TOOLS = [
                     "type": "number",
                     "description": "Fraction of position to sell (0.5 = half)",
                 },
-                "dca_amount_usd": {"type": "number", "description": "USD amount per DCA purchase"},
-                "dca_frequency_days": {"type": "integer", "description": "DCA interval in days"},
-                "max_position_usd": {
+                "dca_amount": {
                     "type": "number",
-                    "description": "Maximum total investment in USD",
+                    "description": "매수 금액 (currency 단위). KR이면 KRW, US이면 USD",
+                },
+                "dca_frequency_days": {"type": "integer", "description": "DCA interval in days"},
+                "max_position": {
+                    "type": "number",
+                    "description": "최대 포지션 한도 (currency 단위). KR이면 KRW, US이면 USD",
                 },
                 "strategy_id": {
                     "type": "integer",
@@ -606,23 +686,26 @@ TRADE_TOOLS = [
         },
     },
     {
-        "name": "get_alpaca_account",
-        "description": "Return Alpaca paper trading account balance, buying power, and open positions.",  # noqa: E501
+        "name": "get_broker_account",
+        "description": "Return KIS account balance, buying power, and positions (국내+해외).",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "place_order",
-        "description": "Place a buy or sell order on Alpaca paper trading.",
+        "description": "Place a buy or sell order via KIS. 국내(6자리 숫자 ticker)와 미국(영문 ticker)을 자동 분기.",  # noqa: E501
         "input_schema": {
             "type": "object",
             "properties": {
-                "ticker": {"type": "string", "description": "Stock/ETF symbol"},
+                "ticker": {
+                    "type": "string",
+                    "description": "종목 코드. 국내: 6자리 숫자(005930), 미국: 영문(AAPL)",
+                },
                 "side": {"type": "string", "enum": ["buy", "sell"]},
-                "qty": {"type": "number", "description": "Number of shares"},
+                "qty": {"type": "number", "description": "Number of shares (정수)"},
                 "order_type": {"type": "string", "enum": ["market", "limit"], "default": "market"},
                 "limit_price": {
                     "type": "number",
-                    "description": "Limit price (only for limit orders)",
+                    "description": "Limit price. 국내: KRW, 미국: USD",
                 },
                 "strategy_id": {
                     "type": "integer",
@@ -632,11 +715,10 @@ TRADE_TOOLS = [
                     "type": "string",
                     "description": "AI's reason for placing this order",
                 },
-                "max_position_usd": {
+                "max_position": {
                     "type": "number",
                     "description": (
-                        "Position size cap in USD from the strategy. "
-                        "If set, the order is rejected before submission if it would exceed this limit."  # noqa: E501
+                        "포지션 한도 (strategy currency 단위). 설정 시 한도 초과 주문은 자동 거부."
                     ),
                 },
             },

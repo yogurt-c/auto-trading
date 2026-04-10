@@ -14,15 +14,25 @@ export function useChatHistory() {
     }
   })
 
-  const setHistory = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+  const setHistory = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[]), persist = true) => {
     setHistoryState(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater
       const capped = next.length > MAX_MESSAGES ? next.slice(-MAX_MESSAGES) : next
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(capped))
-      } catch { /* storage quota exceeded */ }
+      if (persist) {
+        try {
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(capped))
+        } catch { /* storage quota exceeded */ }
+      }
       return capped
     })
+  }
+
+  // 스트리밍 완료 후 명시적으로 호출 — 스트리밍 중에는 persist=false로 상태만 업데이트
+  const persistHistory = (messages: ChatMessage[]) => {
+    const capped = messages.length > MAX_MESSAGES ? messages.slice(-MAX_MESSAGES) : messages
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(capped))
+    } catch { /* storage quota exceeded */ }
   }
 
   const clearHistory = () => {
@@ -30,5 +40,5 @@ export function useChatHistory() {
     setHistoryState([])
   }
 
-  return { history, setHistory, clearHistory }
+  return { history, setHistory, persistHistory, clearHistory }
 }

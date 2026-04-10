@@ -29,6 +29,7 @@ class MarketData(BaseModel):
 
     ticker: str
     current_price: float
+    currency: str = "USD"  # 'KRW' | 'USD'
     high_30d: float | None = None
     rsi_14: float | None = None
 

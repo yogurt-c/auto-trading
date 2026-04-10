@@ -116,7 +116,7 @@ def db_trade_log(_init_db):
         qty=3.0,
         order_type="market",
         status="filled",
-        alpaca_id="fixture-order-id",
+        broker_order_id="fixture-order-id",
     )
     yield log
     with get_session() as s:
@@ -138,7 +138,7 @@ def db_partially_filled_log(_init_db):
         qty=5.0,
         order_type="market",
         status="partially_filled",
-        alpaca_id="partial-order-uuid-001",
+        broker_order_id="partial-order-uuid-001",
     )
     yield log
     with get_session() as s:

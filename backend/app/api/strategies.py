@@ -1,5 +1,7 @@
 """Strategies API — CRUD, evaluate, dca-due."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -19,36 +21,43 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/strategies")
-def get_strategies(status: str | None = None):
+def get_strategies(
+    status: Literal["active", "paused", "completed"] | None = None,
+):
     """전략 목록 반환. status 파라미터로 필터 가능."""
     return db.get_strategies(status)
 
 
 class StrategyCreate(BaseModel):
     name: str
-    strategy_type: str
+    strategy_type: Literal["dca", "momentum", "value", "stop_loss", "take_profit", "custom"]
     description: str = ""
     ticker: str | None = None
     ai_rationale: str | None = None
+    market: Literal["KR", "US"] = "US"
+    currency: Literal["KRW", "USD"] = "USD"
     entry_price_drop_pct: float | None = None
     entry_rsi_below: float | None = None
     take_profit_pct: float | None = None
     stop_loss_pct: float | None = None
     sell_ratio: float | None = None
-    dca_amount_usd: float | None = None
+    dca_amount: float | None = None
     dca_frequency_days: int | None = None
-    max_position_usd: float | None = None
+    max_position: float | None = None
     strategy_id: int | None = None
 
 
 @router.post("/strategies")
 def save_strategy(req: StrategyCreate):
     """전략 생성 또는 업데이트."""
-    return _save_strategy(**req.model_dump())
+    try:
+        return _save_strategy(**req.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 class StatusUpdate(BaseModel):
-    status: str
+    status: Literal["active", "paused", "completed"]
 
 
 @router.patch("/strategies/{strategy_id}/status")

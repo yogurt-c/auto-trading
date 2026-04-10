@@ -1,7 +1,7 @@
 """Integration tests for Trading API endpoints.
 
 DB: real Alembic SQLite (data/test.db)
-External: core.alpaca_client is mocked.
+External: core.kis_client is mocked.
 """
 
 from unittest.mock import patch
@@ -17,7 +17,7 @@ _MOCK_ACCOUNT = {
 }
 
 _MOCK_ORDER = {
-    "alpaca_id": "test-order-id-123",
+    "broker_order_id": "test-order-id-123",
     "ticker": "AAPL",
     "side": "buy",
     "qty": 1.0,
@@ -25,14 +25,16 @@ _MOCK_ORDER = {
     "status": "filled",
     "limit_price": None,
     "filled_avg_price": 150.0,
+    "market": "US",
+    "currency": "USD",
 }
 
 
 def test_get_account_success(auth_client):
     """GET /api/trading/account → Alpaca mock 성공 응답."""
     with (
-        patch("app.api.trading.alpaca_client.get_account", return_value=_MOCK_ACCOUNT),
-        patch("app.api.trading.alpaca_client.get_positions", return_value=[]),
+        patch("app.api.trading.kis_client.get_account", return_value=_MOCK_ACCOUNT),
+        patch("app.api.trading.kis_client.get_positions", return_value=[]),
     ):
         resp = auth_client.get("/api/trading/account")
     assert resp.status_code == 200
@@ -50,17 +52,15 @@ def test_get_account_success(auth_client):
 
 def test_get_account_failure(auth_client):
     """GET /api/trading/account → Alpaca 오류 시 503 반환."""
-    with patch("app.api.trading.alpaca_client.get_account", side_effect=Exception("API error")):
+    with patch("app.api.trading.kis_client.get_account", side_effect=Exception("API error")):
         resp = auth_client.get("/api/trading/account")
     assert resp.status_code == 503
 
 
 def test_place_order_buy_success(auth_client):
     """POST /api/trading/orders → buy 주문 성공."""
-    _patch_order = patch(
-        "app.application.tools.alpaca_client.place_order", return_value=_MOCK_ORDER
-    )
-    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
+    _patch_order = patch("app.application.tools.kis_client.place_order", return_value=_MOCK_ORDER)
+    _patch_sync = patch("app.application.tools.kis_client.sync_positions", return_value=[])
     with _patch_order, _patch_sync:
         resp = auth_client.post(
             "/api/trading/orders",
@@ -72,7 +72,7 @@ def test_place_order_buy_success(auth_client):
     assert data["order"]["ticker"] == "AAPL"
     assert "log_id" in data
     order = data["order"]
-    assert order["alpaca_id"] == "test-order-id-123"
+    assert order["broker_order_id"] == "test-order-id-123"
     assert order["side"] == "buy"
     assert order["qty"] == 1.0
     assert order["status"] == "filled"
@@ -82,7 +82,7 @@ def test_place_order_buy_success(auth_client):
 def test_place_order_failure(auth_client):
     """POST /api/trading/orders → Alpaca 오류 시 success=False."""
     with patch(
-        "app.application.tools.alpaca_client.place_order", side_effect=Exception("Order rejected")
+        "app.application.tools.kis_client.place_order", side_effect=Exception("Order rejected")
     ):
         resp = auth_client.post(
             "/api/trading/orders",
@@ -98,7 +98,7 @@ def test_place_order_failure(auth_client):
 def test_place_order_logged_on_failure(auth_client):
     """POST /api/trading/orders → 실패 시에도 trade log에 failed 상태로 기록."""
     with patch(
-        "app.application.tools.alpaca_client.place_order", side_effect=Exception("Connection error")
+        "app.application.tools.kis_client.place_order", side_effect=Exception("Connection error")
     ):
         resp = auth_client.post(
             "/api/trading/orders",
@@ -176,9 +176,9 @@ def test_sync_pending_orders_updates_status(db_partially_filled_log):
     from app.infrastructure import repository as db
 
     with patch(
-        "app.application.tools.alpaca_client.get_order",
+        "app.application.tools.kis_client.get_order",
         return_value={
-            "alpaca_id": "partial-order-uuid-001",
+            "broker_order_id": "partial-order-uuid-001",
             "status": "filled",
             "filled_avg_price": 200.0,
             "filled_qty": 5.0,
@@ -202,9 +202,9 @@ def test_sync_pending_orders_skips_still_partial(db_partially_filled_log):
     from app.infrastructure import repository as db
 
     with patch(
-        "app.application.tools.alpaca_client.get_order",
+        "app.application.tools.kis_client.get_order",
         return_value={
-            "alpaca_id": "partial-order-uuid-001",
+            "broker_order_id": "partial-order-uuid-001",
             "status": "partially_filled",
             "filled_avg_price": None,
             "filled_qty": 2.0,
@@ -227,7 +227,7 @@ def test_get_partially_filled_logs(db_partially_filled_log):
     assert db_partially_filled_log["id"] in ids
     for lg in logs:
         assert lg["status"] == "partially_filled"
-        assert lg["alpaca_id"] is not None
+        assert lg["broker_order_id"] is not None
 
 
 def test_update_trade_log_status(db_partially_filled_log):
@@ -248,7 +248,7 @@ def test_update_trade_log_status(db_partially_filled_log):
 def test_place_limit_order_captures_filled_price(auth_client):
     """POST /api/trading/orders → limit 주문도 체결 시 filled_price 저장."""
     _mock_order = {
-        "alpaca_id": "limit-order-id-456",
+        "broker_order_id": "limit-order-id-456",
         "ticker": "AAPL",
         "side": "buy",
         "qty": 1.0,
@@ -256,11 +256,11 @@ def test_place_limit_order_captures_filled_price(auth_client):
         "status": "filled",
         "limit_price": 145.0,
         "filled_avg_price": 144.8,
+        "market": "US",
+        "currency": "USD",
     }
-    _patch_order = patch(
-        "app.application.tools.alpaca_client.place_order", return_value=_mock_order
-    )
-    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
+    _patch_order = patch("app.application.tools.kis_client.place_order", return_value=_mock_order)
+    _patch_sync = patch("app.application.tools.kis_client.sync_positions", return_value=[])
     with _patch_order, _patch_sync:
         resp = auth_client.post(
             "/api/trading/orders",
@@ -278,7 +278,7 @@ def test_place_limit_order_captures_filled_price(auth_client):
 
     log_resp = auth_client.get("/api/trading/logs?limit=100&offset=0")
     logs = log_resp.json()["logs"]
-    log = next((lg for lg in logs if lg["alpaca_id"] == "limit-order-id-456"), None)
+    log = next((lg for lg in logs if lg["broker_order_id"] == "limit-order-id-456"), None)
     assert log is not None
     assert log["filled_price"] == pytest.approx(144.8)
     assert log["limit_price"] == pytest.approx(145.0)
@@ -288,12 +288,12 @@ def test_place_order_with_strategy_id(auth_client):
     """POST /api/trading/orders → strategy_id 포함 주문."""
     _mock_strategy_order = {
         **_MOCK_ORDER,
-        "alpaca_id": "test-order-strategy-id-999",
+        "broker_order_id": "test-order-strategy-id-999",
     }
     _patch_order = patch(
-        "app.application.tools.alpaca_client.place_order", return_value=_mock_strategy_order
+        "app.application.tools.kis_client.place_order", return_value=_mock_strategy_order
     )
-    _patch_sync = patch("app.application.tools.alpaca_client.sync_positions", return_value=[])
+    _patch_sync = patch("app.application.tools.kis_client.sync_positions", return_value=[])
     with _patch_order, _patch_sync:
         resp = auth_client.post(
             "/api/trading/orders",
@@ -314,7 +314,7 @@ def test_place_order_with_strategy_id(auth_client):
 
 @pytest.mark.usefixtures("_init_db")
 def test_rebuild_holdings_empty_positions_guard():
-    """rebuild_holdings_from_alpaca: Alpaca가 0 positions 반환 시 기존 holdings 보존."""
+    """rebuild_holdings_from_broker: KIS가 0 positions 반환 시 기존 holdings 보존."""
     from sqlalchemy import delete as sa_delete
 
     from app.infrastructure import repository as db
@@ -324,8 +324,8 @@ def test_rebuild_holdings_empty_positions_guard():
     # 보유 종목 직접 생성
     db.upsert_holding("GUARDTEST", 10.0, 50.0)
     try:
-        # Alpaca 0 positions → guard 발동, holdings 유지
-        result = db.rebuild_holdings_from_alpaca([])
+        # KIS 0 positions → guard 발동, holdings 유지
+        result = db.rebuild_holdings_from_broker([])
         tickers = [h["ticker"] for h in result]
         assert "GUARDTEST" in tickers, "빈 positions 시 기존 holdings가 유지되어야 한다"
     finally:
@@ -352,14 +352,14 @@ def test_sync_pending_orders_sell_creates_realized_trade():
         qty=2.0,
         order_type="market",
         status="partially_filled",
-        alpaca_id="sell-partial-uuid-deferred",
+        broker_order_id="sell-partial-uuid-deferred",
         avg_cost_snapshot=100.0,
     )
     try:
         with patch(
-            "app.application.tools.alpaca_client.get_order",
+            "app.application.tools.kis_client.get_order",
             return_value={
-                "alpaca_id": "sell-partial-uuid-deferred",
+                "broker_order_id": "sell-partial-uuid-deferred",
                 "status": "filled",
                 "filled_avg_price": 120.0,
             },
@@ -394,7 +394,9 @@ def test_place_order_filled_price_zero_no_realized_trade(auth_client):
     db.upsert_holding("ZPTEST", 5.0, 100.0)
     try:
         _mock_order = {
-            "alpaca_id": "sell-zero-price-uuid",
+            "broker_order_id": "sell-zero-price-uuid",
+            "market": "US",
+            "currency": "USD",
             "ticker": "ZPTEST",
             "side": "sell",
             "qty": 1.0,
@@ -404,8 +406,8 @@ def test_place_order_filled_price_zero_no_realized_trade(auth_client):
             "filled_avg_price": 0,
         }
         with (
-            patch("app.application.tools.alpaca_client.place_order", return_value=_mock_order),
-            patch("app.application.tools.alpaca_client.sync_positions", return_value=[]),
+            patch("app.application.tools.kis_client.place_order", return_value=_mock_order),
+            patch("app.application.tools.kis_client.sync_positions", return_value=[]),
         ):
             resp = auth_client.post(
                 "/api/trading/orders",

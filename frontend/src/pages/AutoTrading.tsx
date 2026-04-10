@@ -13,6 +13,7 @@ import Pagination from '../components/Pagination'
 import MarkdownContent from '../components/MarkdownContent'
 import type { Strategy, TradeLog, PaginatedRuns } from '../api/types'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
+import { fmt } from '../lib/format'
 
 const INTERVAL_OPTIONS = ['5', '10', '15', '30', '60', '120', '240']
 
@@ -35,24 +36,22 @@ const PARAM_LABELS: Record<string, string> = {
   take_profit_pct: '익절',
   stop_loss_pct: '손절',
   sell_ratio: '매도 비율',
-  dca_amount_usd: 'DCA 금액',
+  dca_amount: 'DCA 금액',
   dca_frequency_days: 'DCA 주기',
-  max_position_usd: '최대 포지션',
+  max_position: '최대 포지션',
 }
 
-function formatParamValue(key: string, value: unknown): string {
+function formatParamValue(key: string, value: unknown, currency?: string): string {
   if (value == null) return ''
   const n = Number(value)
   if (key.endsWith('_pct')) return `${n}%`
-  if (key.endsWith('_usd')) return `$${n.toLocaleString()}`
+  if (key === 'dca_amount' || key === 'max_position') {
+    if (currency === 'KRW') return `₩${n.toLocaleString('ko-KR')}`
+    return `$${n.toLocaleString()}`
+  }
   if (key === 'dca_frequency_days') return `${n}일`
   if (key === 'sell_ratio') return `${(n * 100).toFixed(0)}%`
   return String(value)
-}
-
-function fmt(n: number | null | undefined, decimals = 2, prefix = '') {
-  if (n == null) return '—'
-  return prefix + n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
 const tradeLogColumns: Column<TradeLog>[] = [
@@ -221,7 +220,7 @@ export default function AutoTrading() {
                         <StrategyHeader onClick={() => setExpandedStrategy(expandedStrategy === s.id ? null : s.id)}>
                           <StrategyInfo>
                             <StrategyName>{s.name}</StrategyName>
-                            <StrategyMeta>{s.symbol} · {s.strategy_type}</StrategyMeta>
+                            <StrategyMeta>{s.ticker ?? '-'} · {s.strategy_type} · {s.market}/{s.currency}</StrategyMeta>
                             {s.description && <StrategyDescription>{s.description}</StrategyDescription>}
                           </StrategyInfo>
                           <StrategyActions onClick={e => e.stopPropagation()}>
@@ -245,7 +244,7 @@ export default function AutoTrading() {
                             {s.last_checked_at && (
                               <DetailRow><DetailKey>마지막 평가</DetailKey><span>{s.last_checked_at.slice(0, 19).replace('T', ' ')}</span></DetailRow>
                             )}
-                            <DetailRow><DetailKey>마지막 실행</DetailKey><span>{s.last_run_at?.slice(0, 19).replace('T', ' ') ?? '없음'}</span></DetailRow>
+                            <DetailRow><DetailKey>마지막 실행</DetailKey><span>{s.last_triggered_at?.slice(0, 19).replace('T', ' ') ?? '없음'}</span></DetailRow>
                             <DetailRow><DetailKey>생성일</DetailKey><span>{s.created_at.slice(0, 10)}</span></DetailRow>
                             {s.ai_rationale && (
                               <DetailRow><DetailKey>AI 근거</DetailKey><span>{s.ai_rationale}</span></DetailRow>
@@ -254,12 +253,15 @@ export default function AutoTrading() {
                               <DetailKey>파라미터</DetailKey>
                               <ParamList>
                                 {(() => {
-                                  const entries = Object.entries(s.parameters).filter(([, v]) => v != null)
+                                  const paramKeys = Object.keys(PARAM_LABELS) as (keyof typeof PARAM_LABELS)[]
+                                  const entries = paramKeys
+                                    .map(k => [k, (s as unknown as Record<string, unknown>)[k]] as [string, unknown])
+                                    .filter(([, v]) => v != null)
                                   if (entries.length === 0) return <span>없음</span>
                                   return entries.map(([k, v]) => (
                                     <ParamItem key={k}>
                                       <ParamLabel>{PARAM_LABELS[k] ?? k}</ParamLabel>
-                                      <span>{formatParamValue(k, v)}</span>
+                                      <span>{formatParamValue(k, v, s.currency)}</span>
                                     </ParamItem>
                                   ))
                                 })()}

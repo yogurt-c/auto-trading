@@ -6,6 +6,8 @@ import { useChatHistory } from '../hooks/useChatHistory'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
 import MarkdownContent from '../components/MarkdownContent'
 
+type ChatMessageWithId = ChatMessage & { id: string }
+
 const QUICK_PROMPTS = [
   '현재 포트폴리오 전체 분석해줘',
   '리스크 높은 종목 알려줘',
@@ -13,7 +15,7 @@ const QUICK_PROMPTS = [
 ]
 
 export default function Analysis() {
-  const { history, setHistory, clearHistory } = useChatHistory()
+  const { history, setHistory, persistHistory, clearHistory } = useChatHistory()
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
@@ -28,34 +30,41 @@ export default function Analysis() {
     if (!msg.trim() || streaming) return
     setError(null)
 
-    const userMsg: ChatMessage = { role: 'user', content: msg }
+    const userMsg: ChatMessageWithId = { id: crypto.randomUUID(), role: 'user', content: msg }
     const nextHistory = [...history, userMsg]
-    setHistory(nextHistory)
+    setHistory(nextHistory, false) // 스트리밍 시작 — persist는 완료 후에
     setInput('')
     setStreaming(true)
 
-    const assistantMsg: ChatMessage = { role: 'assistant', content: '' }
-    setHistory([...nextHistory, assistantMsg])
+    const assistantMsg: ChatMessageWithId = { id: crypto.randomUUID(), role: 'assistant', content: '' }
+    setHistory([...nextHistory, assistantMsg], false)
 
+    // 스트리밍 중 누적 텍스트를 클로저 변수로 추적 (setState 외부에서 관리)
+    let accContent = ''
     try {
-      for await (const chunk of streamChat(msg, history)) {
+      for await (const chunk of streamChat(msg, history.map(({ role, content }) => ({ role, content })))) {
         if (chunk.type === 'status') {
           setStatusMsg(chunk.text)
         } else {
           setStatusMsg(null)
+          accContent += chunk.text
           setHistory(prev => {
             const copy = [...prev]
             const last = copy[copy.length - 1]
             if (last && last.role === 'assistant') {
-              copy[copy.length - 1] = { ...last, content: last.content + chunk.text }
+              copy[copy.length - 1] = { ...last, content: accContent }
             }
             return copy
-          })
+          }, false) // 스트리밍 중 — sessionStorage 쓰기 생략
         }
       }
-    } catch (e) {
-      setError(String(e))
-      setHistory(prev => prev.slice(0, -1))
+      // 스트리밍 완료 후 한 번만 sessionStorage 저장
+      persistHistory([...nextHistory, { ...assistantMsg, content: accContent }])
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail ?? (e instanceof Error ? e.message : '오류가 발생했습니다'))
+      setHistory(nextHistory, false) // assistant placeholder 제거
+      persistHistory(nextHistory)
     } finally {
       setStreaming(false)
       setStatusMsg(null)
@@ -95,8 +104,9 @@ export default function Analysis() {
 
         {history.map((msg, i) => {
           const isLastStreaming = streaming && i === history.length - 1
+          const msgWithId = msg as ChatMessageWithId
           return (
-            <Bubble key={i} role={msg.role}>
+            <Bubble key={msgWithId.id ?? i} role={msg.role}>
               <BubbleLabel>{msg.role === 'user' ? '나' : 'AI'}</BubbleLabel>
               {msg.role === 'assistant' ? (
                 <MarkdownContent>
