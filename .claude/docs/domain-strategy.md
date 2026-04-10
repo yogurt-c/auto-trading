@@ -3,7 +3,7 @@
 ## Bounded Context
 
 매매 전략 규칙 정의, 조건 평가, 실행 이력 추적.
-AI 에이전트가 자연어로 전략을 생성하고, 스케줄러가 주기적으로 조건을 평가해 Alpaca 주문을 실행한다.
+AI 에이전트가 자연어로 전략을 생성하고, 스케줄러가 주기적으로 조건을 평가해 KIS 주문을 실행한다.
 
 ---
 
@@ -43,7 +43,7 @@ AI 에이전트가 자연어로 전략을 생성하고, 스케줄러가 주기�
 | `ticker` | str | 종목 티커 |
 | `shares` | Decimal | 실행 주수 |
 | `price` | Decimal | 실행 단가 |
-| `order_id` | Optional[str] | Alpaca 주문 ID |
+| `broker_order_id` | Optional[str] | KIS 주문 ID |
 | `reason` | str | 실행 사유 (조건 설명) |
 | `executed_at` | datetime | 실행 시각 (UTC) |
 
@@ -85,7 +85,7 @@ DCA(Dollar-Cost Averaging) 일정. 불변. `strategy_type == "dca"`에만 사용
 
 | 속성 | 타입 | 설명 |
 |------|------|------|
-| `amount_usd` | Decimal | 회당 매수 금액 (USD) |
+| `amount` | Decimal | 회당 매수 금액 (currency 단위: KRW 또는 USD) |
 | `frequency_days` | int | 매수 주기 (일) |
 | `last_executed_at` | Optional[datetime] | 마지막 실행 시각 |
 
@@ -95,7 +95,7 @@ DCA(Dollar-Cost Averaging) 일정. 불변. `strategy_type == "dca"`에만 사용
 
 | 속성 | 타입 | 설명 |
 |------|------|------|
-| `max_position_usd` | Optional[Decimal] | 최대 포지션 한도 (USD) |
+| `max_position` | Optional[Decimal] | 최대 포지션 한도 (currency 단위: KRW 또는 USD) |
 
 ### `StrategyStatus`
 
@@ -191,7 +191,7 @@ class TradeLogRepository(Protocol):
 | DAL | `core/portfolio.py` | SQLite CRUD 함수 (Repository 구현체) |
 | 전략 평가 | `core/tools.py` | `evaluate_strategy`, `check_dca_due` (→ Domain Service 이동 대상) |
 | 전략 파라미터 검증 | `core/tools.py` | `_validate_strategy_params` (→ Domain Service 이동 대상) |
-| Alpaca 주문 | `core/alpaca_client.py` | `place_order` (Application Layer에서 호출) |
+| KIS 주문 | `app/infrastructure/kis_client.py` | `place_order` (Application Layer에서 호출; 국내/해외 자동 분기) |
 | 시장 데이터 | `core/market.py` | Yahoo Finance (RSI, 30일 고점 계산용) |
 
 ---

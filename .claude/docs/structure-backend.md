@@ -16,7 +16,7 @@ backend/
 │   │   ├── deps.py           # FastAPI 공통 의존성 (get_current_user)
 │   │   ├── portfolio.py      # GET /api/portfolio (P&L), sync, holdings, transactions, performance
 │   │   ├── strategies.py     # CRUD + evaluate + dca-due
-│   │   ├── trading.py        # Alpaca account, orders, logs
+│   │   ├── trading.py        # KIS broker account, orders, logs
 │   │   ├── agent.py          # SSE chat stream, trade-executor trigger
 │   │   └── scheduler.py      # scheduler status/runs/trigger + settings CRUD
 │   ├── application/          # Application Layer — 유스케이스 오케스트레이션
@@ -26,7 +26,7 @@ backend/
 │   │   └── tools.py          # Agent tool 함수 + TOOL_MAP + Anthropic 스키마
 │   ├── infrastructure/       # Infrastructure Layer — 기술적 구현 (DB, 외부 API)
 │   │   ├── __init__.py
-│   │   ├── alpaca_client.py  # Alpaca Paper Trading API 래퍼
+│   │   ├── kis_client.py     # KIS (Korea Investment & Securities) Paper Trading API 래퍼
 │   │   ├── auth.py           # JWT 생성·검증, bcrypt 해싱, Secret Key 관리 (DB 기반)
 │   │   ├── config.py         # Settings dataclass (SQLAlchemy 기반, 캐시)
 │   │   ├── database.py       # SQLite init (Alembic), get_session() 컨텍스트매니저
@@ -50,10 +50,7 @@ backend/
 ├── alembic/                  # DB 스키마 마이그레이션
 │   ├── env.py
 │   └── versions/
-│       ├── 001_initial_schema.py
-│       ├── 002_scheduler.py
-│       ├── 003_timezone_kst.py
-│       └── 004_realized_trades.py
+│       └── 001_initial_schema.py  # KIS 브로커 통합 전체 스키마 (market/currency 포함)
 └── tests/                    # pytest (unit + integration + e2e)
     ├── conftest.py
     ├── unit/domain/
@@ -73,9 +70,9 @@ backend/
 | `deps.py` | `get_current_user` FastAPI dependency | `app.infrastructure.auth` |
 | `portfolio.py` | 포트폴리오 REST 엔드포인트 | `app.infrastructure.repository`, `app.infrastructure.market`, `app.domain.portfolio.services` |
 | `strategies.py` | 전략 CRUD + 평가 엔드포인트 | `app.infrastructure.repository`, `app.application.tools` |
-| `trading.py` | Alpaca 계좌·주문·로그 엔드포인트 | `app.infrastructure.alpaca_client`, `app.infrastructure.repository`, `app.application.tools` |
+| `trading.py` | KIS 계좌·주문·로그 엔드포인트 | `app.infrastructure.kis_client`, `app.infrastructure.repository`, `app.application.tools` |
 | `agent.py` | SSE 스트리밍·trade-executor 엔드포인트 | `app.application.agent` |
-| `scheduler.py` | 스케줄러 상태·settings CRUD 엔드포인트 | `app.application.scheduler`, `app.infrastructure.repository`, `app.infrastructure.config`, `app.infrastructure.alpaca_client` |
+| `scheduler.py` | 스케줄러 상태·settings CRUD 엔드포인트 | `app.application.scheduler`, `app.infrastructure.repository`, `app.infrastructure.config`, `app.infrastructure.kis_client` |
 
 ### `backend/app/application/` — Application Layer
 
@@ -89,12 +86,12 @@ backend/
 
 | 파일 | 역할 | 비고 |
 |------|------|------|
-| `alpaca_client.py` | Alpaca TradingClient 싱글톤 래퍼 | `reset_client()` — 설정 변경 시 호출 |
+| `kis_client.py` | KIS TradingClient 싱글톤 래퍼 | `reset_client()` — 설정 변경 시 호출; `is_korean_ticker()`, `ticker_market()`, `ticker_currency()` 유틸 |
 | `auth.py` | JWT 생성·검증, bcrypt 비밀번호 해싱 | `__SECRET_KEY__`·`APP_PASSWORD_HASH`를 Settings 테이블에 저장 |
 | `config.py` | Settings 캐시 (SQLAlchemy 기반) | `reload_settings()` — 설정 저장 후 호출 |
 | `database.py` | SQLite 초기화 (Alembic auto-migrate) | `get_session()` — context manager |
-| `market.py` | `get_current_prices(tickers)` | yfinance, 실패 티커는 결과에서 제외 |
-| `models.py` | ORM: Holding, Transaction, Strategy, TradeLog, RealizedTrade, Setting, SchedulerRun | |
+| `market.py` | `get_current_prices(tickers)` | yfinance, 6자리 한국 티커는 자동으로 `.KS` suffix 추가, 실패 티커는 결과에서 제외 |
+| `models.py` | ORM: Holding, Transaction, Strategy, TradeLog, RealizedTrade, Setting, SchedulerRun | market/currency 필드 추가됨 |
 | `repository.py` | 전체 DB CRUD 함수 | get_all_holdings, save_strategy, add_trade_log, add_realized_trade, get_realized_trades … |
 
 ### `backend/app/domain/` — Domain Layer
@@ -155,4 +152,4 @@ alembic -c backend/alembic.ini upgrade head
 |------|--------|------|
 | `DB_PATH` | `data/portfolio.db` | SQLite DB 경로 (프로젝트 루트 기준) |
 
-API 키 (`ANTHROPIC_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`)는 `.env` 파일이 아닌 **SQLite settings 테이블**에 저장됨.
+API 키 (`ANTHROPIC_API_KEY`, `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT_NO`)는 `.env` 파일이 아닌 **SQLite settings 테이블**에 저장됨.

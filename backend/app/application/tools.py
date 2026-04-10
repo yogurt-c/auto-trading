@@ -110,11 +110,15 @@ def save_strategy(
     strategy_id: int | None = None,
 ) -> dict:
     """Save or update a trading strategy in the database."""
-    # ticker로 market/currency 자동 추론 (명시적 전달이 없을 때 보정)
+    # ticker로 market/currency 자동 추론 (AI가 잘못된 값을 전달한 경우 보정)
     if ticker:
         inferred_market = kis_client.ticker_market(ticker)
         inferred_currency = kis_client.ticker_currency(ticker)
-        if market == "US" and inferred_market == "KR":
+        if market != inferred_market:
+            logger.warning(
+                f"save_strategy: market mismatch for {ticker} "
+                f"(given={market}, inferred={inferred_market}) — using inferred"
+            )
             market = inferred_market
             currency = inferred_currency
 
@@ -163,12 +167,23 @@ def update_strategy_status(strategy_id: int, status: str) -> dict:
 def _to_yf_ticker(ticker: str) -> str:
     """KIS 종목코드 → yfinance 티커 변환.
 
-    국내(6자리 숫자): KOSPI 기준 '.KS' 접미사 추가
-    해외: 그대로 사용
+    국내(6자리 숫자): '.KS'(KOSPI) 시도 후 데이터 없으면 '.KQ'(KOSDAQ) 폴백.
+    해외: 그대로 사용.
     """
-    if kis_client.is_korean_ticker(ticker):
-        return f"{ticker}.KS"
-    return ticker
+    if not kis_client.is_korean_ticker(ticker):
+        return ticker
+
+    # KOSPI 먼저 시도
+    ks_ticker = f"{ticker}.KS"
+    try:
+        data = yf.download(ks_ticker, period="5d", interval="1d", progress=False, auto_adjust=True)
+        if not data.empty:
+            return ks_ticker
+    except Exception:
+        pass
+
+    # KOSDAQ 폴백
+    return f"{ticker}.KQ"
 
 
 def evaluate_strategy(strategy_id: int) -> dict:

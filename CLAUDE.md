@@ -1,11 +1,11 @@
 # CLAUDE.md
 
-AI-powered financial portfolio management tool — monitors holdings, runs automated trading strategies via Alpaca, and provides a Claude AI agent for natural language interaction.
+AI-powered financial portfolio management tool — monitors holdings, runs automated trading strategies via KIS (Korea Investment & Securities), and provides a Claude AI agent for natural language interaction.
 
 ## Rules
 
 - `frontend/pages/` must only use `frontend.api_client` — never import `backend/` directly
-- Alpaca is configured for **Paper Trading** (safe for testing)
+- KIS is configured for **Paper Trading** (모의투자, safe for testing)
 - 구현 완료 후 커밋 전에 반드시 [checklist-development.md](.claude/docs/checklist-development.md)의 모든 항목을 확인하고, 해당 항목을 스스로 실행(테스트 실행·빌드·문서 업데이트 등)한다 — 사용자가 요청하지 않아도 자동으로 수행한다
 
 ## References

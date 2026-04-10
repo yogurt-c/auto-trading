@@ -48,7 +48,7 @@ graph TB
 
     subgraph Infra["Infrastructure Layer (backend/infrastructure/)"]
         I1[repository.py<br/>SQLite DAL]
-        I2[alpaca_client.py<br/>Alpaca Paper Trading]
+        I2[kis_client.py<br/>KIS Paper Trading]
         I3[market.py<br/>Yahoo Finance]
         I4[database.py + models.py<br/>SQLAlchemy ORM]
         I5[config.py<br/>Settings 캐시]
@@ -56,7 +56,7 @@ graph TB
 
     subgraph External["External Services"]
         E1[(data/portfolio.db<br/>SQLite)]
-        E2[Alpaca API]
+        E2[KIS API]
         E3[Yahoo Finance]
         E4[Claude API<br/>Sonnet 4.6 / Haiku 4.5]
     end
@@ -101,7 +101,7 @@ graph LR
     end
 
     S -->|ticker 참조| H
-    TL -->|주문 완료 후<br/>Alpaca Position Sync| H
+    TL -->|주문 완료 후<br/>KIS Position Sync| H
 ```
 
 ---
@@ -120,7 +120,7 @@ sequenceDiagram
     participant Tools as application/tools.py
     participant Domain as domain/ services
     participant DB as SQLite
-    participant Alpaca as Alpaca API
+    participant Alpaca as KIS API
 
     rect rgb(230, 245, 255)
         Note over User,Alpaca: 채팅 흐름 (SSE 스트리밍)
@@ -142,13 +142,13 @@ sequenceDiagram
         Exec->>Tools: get_strategies(status=active)
         Tools->>DB: Strategy SELECT
         Exec->>Tools: evaluate_strategy(id)
-        Tools->>Alpaca: yfinance 현재가·RSI 조회
+        Tools->>Market: yfinance 현재가·RSI 조회
         Tools->>Domain: StrategyEvaluator.evaluate(MarketData)
         Domain-->>Tools: EvaluationResult
         Exec->>Tools: check_dca_due(id)
         Tools->>Domain: DcaScheduleChecker.is_due()
         Exec->>Tools: place_order(...)
-        Tools->>Alpaca: 주문 실행
+        Tools->>Alpaca: 주문 실행 (KIS API)
         Tools->>DB: TradeLog INSERT
         Tools->>Alpaca: sync_positions()
         Tools->>DB: Holding REPLACE
@@ -171,9 +171,9 @@ graph LR
 
     subgraph portfolio["/api/portfolio"]
         P1["GET /api/portfolio<br/>holdings + P&L 스냅샷"]
-        P2["POST /api/portfolio/sync<br/>Alpaca 포지션 동기화"]
+        P2["POST /api/portfolio/sync<br/>KIS 포지션 동기화"]
         P3["GET /api/portfolio/holdings<br/>DB 목록 (시세 없음)"]
-        P4["GET /api/portfolio/transactions<br/>Alpaca 체결 주문 이력"]
+        P4["GET /api/portfolio/transactions<br/>KIS 체결 주문 이력"]
         P5["GET /api/portfolio/performance<br/>기간별 실현 손익 집계"]
     end
 
@@ -187,7 +187,7 @@ graph LR
     end
 
     subgraph trading["/api/trading"]
-        T1["GET /api/trading/account<br/>Alpaca 계좌 정보"]
+        T1["GET /api/trading/account<br/>KIS 계좌 정보"]
         T2["POST /api/trading/orders<br/>주문 실행"]
         T3["GET /api/trading/logs<br/>매매 로그"]
     end

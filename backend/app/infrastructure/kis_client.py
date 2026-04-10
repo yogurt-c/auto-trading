@@ -83,7 +83,10 @@ def _parse_account(account_no: str) -> tuple[str, str]:
     parts = account_no.split("-")
     if len(parts) == 2:
         return parts[0], parts[1]
-    return account_no, "01"
+    raise ValueError(
+        f"계좌번호 형식이 잘못되었습니다: '{account_no}'. "
+        "'12345678-01' 형식으로 입력해 주세요."
+    )
 
 
 def _get_access_token() -> str:
@@ -421,9 +424,7 @@ def get_filled_orders(limit: int = 50) -> list[dict]:
     cano, acnt_cd = _parse_account(s.kis_account_no)
     tr_id = _KR_ORDER_INQUIRE_PAPER if s.kis_paper else _KR_ORDER_INQUIRE_REAL
 
-    from datetime import date
-
-    today = date.today().strftime("%Y%m%d")
+    today = datetime.now(_KST).strftime("%Y%m%d")
 
     resp = httpx.get(
         f"{_base_url()}/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
@@ -615,8 +616,12 @@ def _place_overseas_order(
     }
 
 
-def _poll_fill_price(order_id: str, market: str, retries: int = 10) -> float | None:
-    """주문 체결가 폴링 (최대 retries * 0.5초)."""
+def _poll_fill_price(order_id: str, market: str, retries: int = 3) -> float | None:
+    """주문 체결가 폴링 (최대 retries * 0.5초 = 1.5초).
+
+    국내 시장가 주문은 즉시 체결되는 경우가 대부분이므로 3회로 제한.
+    미체결 시 None 반환 → 스케줄러가 sync_pending_orders()로 추후 갱신.
+    """
     for _ in range(retries):
         time.sleep(0.5)
         try:
