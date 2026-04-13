@@ -55,6 +55,10 @@ _US_ORDER_INQUIRE_PAPER = "VTTS3035R"
 # 현재가 조회 TR_ID
 _KR_PRICE_INQUIRY = "FHKST01010100"
 
+# 일별 주문체결조회 TR_ID
+_KR_DAILY_CCLD_REAL = "TTTC8001R"
+_KR_DAILY_CCLD_PAPER = "VTTC8001R"
+
 # 주문 취소 TR_ID
 _KR_CANCEL_REAL = "TTTC0013U"
 _KR_CANCEL_PAPER = "VTTC0013U"
@@ -186,14 +190,30 @@ def ticker_currency(ticker: str) -> str:
 
 
 def get_account() -> dict:
-    """KIS 계좌 잔고 요약 반환.
-
-    국내 계좌 기준 (cash, portfolio_value는 KRW 단위).
-    """
+    """KIS 계좌 잔고 요약 반환. 국내(KRW) + 해외(USD) 분리."""
     s = get_settings()
     if not s.kis_account_no:
         raise ValueError("KIS 계좌번호가 설정되지 않았습니다.")
 
+    kr = _get_domestic_balance()
+
+    try:
+        us = _get_overseas_balance_summary()
+    except Exception as e:
+        logger.warning(f"해외 계좌 잔고 조회 실패 (0으로 처리): {e}")
+        us = {"us_cash": 0.0, "us_buying_power": 0.0, "us_portfolio_value": 0.0}
+
+    return {
+        **kr,
+        **us,
+        "status": "normal",
+        "is_paper": s.kis_paper,
+    }
+
+
+def _get_domestic_balance() -> dict:
+    """국내 계좌 잔고 요약 (KRW)."""
+    s = get_settings()
     cano, acnt_cd = _parse_account(s.kis_account_no)
     tr_id = _KR_BALANCE_PAPER if s.kis_paper else _KR_BALANCE_REAL
 
@@ -216,23 +236,77 @@ def get_account() -> dict:
         timeout=10,
     )
     resp.raise_for_status()
-    data = _check_response(resp.json(), "inquire-balance")
+    data = _check_response(resp.json(), "domestic-balance-summary")
 
-    # output2: 계좌 요약 정보
-    summary = data.get("output2", [{}])
-    summary = summary[0] if summary else {}
-
-    cash = float(summary.get("dnca_tot_amt", 0))  # 예수금 총금액
-    portfolio_value = float(summary.get("tot_evlu_amt", cash))  # 총 평가금액
-    buying_power = float(summary.get("nass_amt", cash))  # 순자산금액
+    raw = data.get("output2", [{}])
+    summary = raw[0] if isinstance(raw, list) and raw else (raw if isinstance(raw, dict) else {})
 
     return {
-        "cash": cash,
-        "portfolio_value": portfolio_value,
-        "buying_power": buying_power,
-        "currency": "KRW",
-        "status": "normal",
-        "is_paper": s.kis_paper,
+        "kr_cash": float(summary.get("dnca_tot_amt", 0)),
+        "kr_portfolio_value": float(summary.get("tot_evlu_amt", 0)),
+        "kr_buying_power": float(summary.get("nass_amt", 0)),
+    }
+
+
+def _get_overseas_balance_summary() -> dict:
+    """해외(미국) 계좌 잔고 요약 (USD). 5xx 오류 시 최대 3회 재시도."""
+    s = get_settings()
+    cano, acnt_cd = _parse_account(s.kis_account_no)
+    tr_id = _US_BALANCE_PAPER if s.kis_paper else _US_BALANCE_REAL
+
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        if attempt > 0:
+            delay = attempt
+            logger.info(f"해외 잔고 요약 재시도 {attempt}/2 ({delay}s 대기)")
+            time.sleep(delay)
+        resp = httpx.get(
+            f"{_base_url()}/uapi/overseas-stock/v1/trading/inquire-balance",
+            headers=_headers(tr_id),
+            params={
+                "CANO": cano,
+                "ACNT_PRDT_CD": acnt_cd,
+                "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
+                "TR_CRCY_CD": "USD",
+                "CTX_AREA_FK200": "",
+                "CTX_AREA_NK200": "",
+            },
+            timeout=10,
+        )
+        if resp.status_code >= 500:
+            try:
+                err_body = resp.json()
+                logger.error(
+                    f"해외 잔고 요약 조회 HTTP {resp.status_code}: "
+                    f"rt_cd={err_body.get('rt_cd')} msg={err_body.get('msg1', '').strip()}"
+                )
+            except Exception:
+                logger.error(f"해외 잔고 요약 조회 HTTP {resp.status_code}: {resp.text[:200]}")
+            last_exc = RuntimeError(f"HTTP {resp.status_code}")
+            continue
+        resp.raise_for_status()
+        break
+    else:
+        raise last_exc  # type: ignore[misc]
+
+    data = _check_response(resp.json(), "overseas-balance-summary")
+
+    raw = data.get("output2", {})
+    summary = raw[0] if isinstance(raw, list) and raw else raw if isinstance(raw, dict) else {}
+
+    # 포지션 합산으로 총 평가금액 계산 (ovrs_stck_evlu_amt: 검증된 필드명)
+    positions = data.get("output1", [])
+    us_portfolio_value = sum(
+        float(item.get("ovrs_stck_evlu_amt", 0))
+        for item in positions
+        if float(item.get("ovrs_cblc_qty", 0)) > 0
+    )
+
+    # frcr_dncl_amt_2: 외화예수금, frcr_ord_psbl_amt1: 외화주문가능금액
+    return {
+        "us_cash": float(summary.get("frcr_dncl_amt_2", 0)),
+        "us_buying_power": float(summary.get("frcr_ord_psbl_amt1", 0)),
+        "us_portfolio_value": us_portfolio_value,
     }
 
 
@@ -290,40 +364,65 @@ def _get_domestic_positions() -> list[dict]:
 
 
 def _get_overseas_positions() -> list[dict]:
-    """해외(미국) 보유 종목 조회."""
+    """해외(미국) 보유 종목 조회. 5xx 오류 시 최대 3회 재시도."""
     s = get_settings()
     cano, acnt_cd = _parse_account(s.kis_account_no)
     tr_id = _US_BALANCE_PAPER if s.kis_paper else _US_BALANCE_REAL
 
-    resp = httpx.get(
-        f"{_base_url()}/uapi/overseas-stock/v1/trading/inquire-balance",
-        headers=_headers(tr_id),
-        params={
-            "CANO": cano,
-            "ACNT_PRDT_CD": acnt_cd,
-            "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
-            "TR_CRCY_CD": "USD",
-            "CTX_AREA_FK200": "",
-            "CTX_AREA_NK200": "",
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        if attempt > 0:
+            delay = attempt  # 1s, 2s
+            logger.info(f"해외 포지션 재시도 {attempt}/2 ({delay}s 대기)")
+            time.sleep(delay)
+        resp = httpx.get(
+            f"{_base_url()}/uapi/overseas-stock/v1/trading/inquire-balance",
+            headers=_headers(tr_id),
+            params={
+                "CANO": cano,
+                "ACNT_PRDT_CD": acnt_cd,
+                "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
+                "TR_CRCY_CD": "USD",
+                "CTX_AREA_FK200": "",
+                "CTX_AREA_NK200": "",
+            },
+            timeout=10,
+        )
+        if resp.status_code >= 500:
+            # 응답 바디에 KIS 오류 메시지가 있을 수 있으므로 로깅
+            try:
+                err_body = resp.json()
+                logger.error(
+                    f"해외 포지션 조회 HTTP {resp.status_code}: "
+                    f"rt_cd={err_body.get('rt_cd')} msg_cd={err_body.get('msg_cd')} "
+                    f"msg={err_body.get('msg1', '').strip()}"
+                )
+            except Exception:
+                logger.error(f"해외 포지션 조회 HTTP {resp.status_code}: {resp.text[:200]}")
+            last_exc = RuntimeError(f"HTTP {resp.status_code}")
+            continue
+        resp.raise_for_status()  # 4xx: 즉시 전파 (재시도 안 함)
+        break
+    else:
+        raise last_exc  # type: ignore[misc]
+
     data = _check_response(resp.json(), "overseas-balance")
 
     result = []
     for item in data.get("output1", []):
-        qty = float(item.get("hldg_qty", 0))
+        # 스펙 필드명: ovrs_cblc_qty(잔고수량), ovrs_pdno(종목코드),
+        #              ovrs_stck_evlu_amt(평가금액), frcr_evlu_pfls_amt(외화평가손익)
+        qty = float(item.get("ovrs_cblc_qty", 0))
         if qty <= 0:
             continue
         result.append(
             {
-                "ticker": item.get("pdno", ""),
+                "ticker": item.get("ovrs_pdno", ""),
                 "qty": qty,
                 "avg_entry_price": float(item.get("pchs_avg_pric", 0)),
                 "current_price": float(item.get("now_pric2", 0)),
-                "market_value": float(item.get("evlu_amt", 0)),
-                "unrealized_pl": float(item.get("evlu_pfls_amt", 0)),
+                "market_value": float(item.get("ovrs_stck_evlu_amt", 0)),
+                "unrealized_pl": float(item.get("frcr_evlu_pfls_amt", 0)),
                 "unrealized_plpc": float(item.get("evlu_pfls_rt", 0)),
                 "market": "US",
                 "currency": "USD",
@@ -430,7 +529,7 @@ def get_filled_orders(limit: int = 50) -> list[dict]:
     """최근 체결 완료된 주문 이력 반환 (국내 기준)."""
     s = get_settings()
     cano, acnt_cd = _parse_account(s.kis_account_no)
-    tr_id = _KR_ORDER_INQUIRE_PAPER if s.kis_paper else _KR_ORDER_INQUIRE_REAL
+    tr_id = _KR_DAILY_CCLD_PAPER if s.kis_paper else _KR_DAILY_CCLD_REAL
 
     today = datetime.now(_KST).strftime("%Y%m%d")
 
@@ -685,10 +784,10 @@ def get_current_price(ticker: str) -> dict:
     output = data.get("output", {})
     return {
         "ticker": ticker,
-        "price": float(output.get("stck_prpr", 0)),       # 주식 현재가
-        "change": float(output.get("prdy_vrss", 0)),       # 전일 대비
+        "price": float(output.get("stck_prpr", 0)),  # 주식 현재가
+        "change": float(output.get("prdy_vrss", 0)),  # 전일 대비
         "change_rate": float(output.get("prdy_ctrt", 0)),  # 전일 대비율(%)
-        "volume": int(output.get("acml_vol", 0) or 0),     # 누적 거래량
+        "volume": int(output.get("acml_vol", 0) or 0),  # 누적 거래량
         "market": "KR",
         "currency": "KRW",
     }
@@ -710,7 +809,8 @@ def cancel_order(
     Args:
         order_id: 취소할 원주문번호 (broker_order_id)
         market: 'KR' 또는 'US'
-        krx_fwdg_ord_orgno: 국내 주문 시 KRX 전송 주문 조직번호 (place_order 반환값, 없으면 빈 문자열)
+        krx_fwdg_ord_orgno: 국내 주문 시 KRX 전송 주문 조직번호
+            (place_order 반환값, 없으면 빈 문자열)
         ticker: 해외 주문 취소 시 종목 코드 (필수)
 
     Returns:
@@ -730,8 +830,8 @@ def cancel_order(
             "RVSE_CNCL_DVSN_CD": "02",  # 02 = 취소
             "ORD_QTY": "0",
             "ORD_UNPR": "0",
-            "QTY_ALL_ORD_YN": "Y",       # 잔량 전량 취소
-            "EXCG_ID_DVSN_CD": "KRX",    # 거래소 ID (KRX: 한국거래소, NXT: 대체거래소, SOR)
+            "QTY_ALL_ORD_YN": "Y",  # 잔량 전량 취소
+            "EXCG_ID_DVSN_CD": "KRX",  # 거래소 ID (KRX: 한국거래소, NXT: 대체거래소, SOR)
         }
         endpoint = f"{_base_url()}/uapi/domestic-stock/v1/trading/order-rvsecncl"
     else:
@@ -740,12 +840,12 @@ def cancel_order(
             "CANO": cano,
             "ACNT_PRDT_CD": acnt_cd,
             "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
-            "PDNO": ticker.upper(),   # 해외 취소 시 종목코드 필수
+            "PDNO": ticker.upper(),  # 해외 취소 시 종목코드 필수
             "ORGN_ODNO": order_id,
             "RVSE_CNCL_DVSN_CD": "02",
             "ORD_QTY": "0",
-            "OVRS_ORD_UNPR": "0",     # 취소주문 시 "0" 입력
-            "MGCO_APTM_ODNO": "",     # 운용사지정주문번호 (일반 주문은 빈 문자열)
+            "OVRS_ORD_UNPR": "0",  # 취소주문 시 "0" 입력
+            "MGCO_APTM_ODNO": "",  # 운용사지정주문번호 (일반 주문은 빈 문자열)
             "ORD_SVR_DVSN_CD": "0",
         }
         endpoint = f"{_base_url()}/uapi/overseas-stock/v1/trading/order-rvsecncl"

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import styled from '@emotion/styled'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -11,7 +11,9 @@ import type { Column } from '../components/DataTable'
 import StatusBadge from '../components/StatusBadge'
 import Pagination from '../components/Pagination'
 import MarkdownContent from '../components/MarkdownContent'
-import type { Strategy, TradeLog, PaginatedRuns, Currency } from '../api/types'
+import type { Strategy, TradeLog, PaginatedRuns } from '../api/types'
+
+type MarketTab = 'all' | 'KR' | 'US'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
 import { fmt, fmtCurrency } from '../lib/format'
 
@@ -33,6 +35,11 @@ const STATUS_LABEL: Record<string, string> = {
 const PARAM_LABELS: Record<string, string> = {
   entry_price_drop_pct: '진입 하락',
   entry_rsi_below: 'RSI 임계값',
+  entry_bb_lower_touch: '볼린저 하단',
+  entry_macd_hist_positive: 'MACD 양전환',
+  entry_disparity_below: '이격도',
+  entry_volume_surge: '거래량 급등',
+  entry_sma_cross: 'SMA 돌파',
   take_profit_pct: '익절',
   stop_loss_pct: '손절',
   sell_ratio: '매도 비율',
@@ -43,6 +50,11 @@ const PARAM_LABELS: Record<string, string> = {
 
 function formatParamValue(key: string, value: unknown, currency?: string): string {
   if (value == null) return ''
+  if (key === 'entry_bb_lower_touch' || key === 'entry_macd_hist_positive') {
+    return value ? '활성' : '비활성'
+  }
+  if (key === 'entry_sma_cross') return `SMA${value}일`
+  if (key === 'entry_volume_surge') return `${value}배`
   const n = Number(value)
   if (key.endsWith('_pct')) return `${n}%`
   if (key === 'dca_amount' || key === 'max_position') {
@@ -74,6 +86,7 @@ function formatDuration(startedAt: string, finishedAt: string | null): string {
 
 export default function AutoTrading() {
   const qc = useQueryClient()
+  const [marketTab, setMarketTab] = useState<MarketTab>('all')
   const [expandedStrategy, setExpandedStrategy] = useState<number | null>(null)
   const [expandedRun, setExpandedRun] = useState<number | null>(null)
   const [logPage, setLogPage] = useState(1)
@@ -120,9 +133,27 @@ export default function AutoTrading() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['settings'] }),
   })
 
-  const active = (strategies ?? []).filter(s => s.status === 'active')
-  const paused = (strategies ?? []).filter(s => s.status === 'paused')
-  const completed = (strategies ?? []).filter(s => s.status === 'completed')
+  const handleMarketTabChange = (tab: MarketTab) => {
+    setMarketTab(tab)
+    setExpandedStrategy(null)
+    setLogPage(1)
+  }
+
+  const filteredStrategies = useMemo(() => {
+    const list = strategies ?? []
+    if (marketTab === 'all') return list
+    return list.filter(s => s.market === marketTab)
+  }, [strategies, marketTab])
+
+  const filteredLogs = useMemo(() => {
+    const logs = logsData?.logs ?? []
+    if (marketTab === 'all') return logs
+    return logs.filter(l => l.market === marketTab)
+  }, [logsData, marketTab])
+
+  const active = filteredStrategies.filter(s => s.status === 'active')
+  const paused = filteredStrategies.filter(s => s.status === 'paused')
+  const completed = filteredStrategies.filter(s => s.status === 'completed')
 
   const schedulerEnabled = settings?.['scheduler_enabled'] === 'true'
   const currentInterval = settings?.['scheduler_interval_minutes'] ?? '30'
@@ -131,18 +162,42 @@ export default function AutoTrading() {
     <Page>
       <PageTitle>Auto Trading</PageTitle>
 
-      {/* 계좌 메트릭 */}
-      {(() => {
-        const acctCurrency = (account?.currency ?? 'KRW') as Currency
-        return (
-          <MetricGrid>
-            <MetricCard title="Portfolio Value" value={fmtCurrency(account?.portfolio_value, acctCurrency)} />
-            <MetricCard title="Buying Power"   value={fmtCurrency(account?.buying_power,   acctCurrency)} />
-            <MetricCard title="Cash"           value={fmtCurrency(account?.cash,           acctCurrency)} />
-            <MetricCard title="Status"         value={account?.status ?? '—'} />
-          </MetricGrid>
-        )
-      })()}
+      {/* 시장 탭 */}
+      <MarketTabBar>
+        {(['all', 'KR', 'US'] as const).map(tab => (
+          <MarketTabBtn key={tab} active={marketTab === tab} onClick={() => handleMarketTabChange(tab)}>
+            {tab === 'all' ? '전체' : tab === 'KR' ? '국내 KR' : '해외 US'}
+          </MarketTabBtn>
+        ))}
+      </MarketTabBar>
+
+      {/* 계좌 정보 */}
+      <AccountRow>
+        {(marketTab === 'all' || marketTab === 'KR') && (
+          <AccountGroup>
+            <AccountGroupTitle>국내 계좌 (KRW)</AccountGroupTitle>
+            <MetricGrid>
+              <MetricCard title="예수금"    value={fmtCurrency(account?.kr_cash,             'KRW')} />
+              <MetricCard title="총 평가"   value={fmtCurrency(account?.kr_portfolio_value,  'KRW')} />
+              <MetricCard title="주문 가능" value={fmtCurrency(account?.kr_buying_power,      'KRW')} />
+            </MetricGrid>
+          </AccountGroup>
+        )}
+        {(marketTab === 'all' || marketTab === 'US') && (
+          <AccountGroup>
+            <AccountGroupTitle>해외 계좌 (USD)</AccountGroupTitle>
+            <MetricGrid>
+              <MetricCard title="예수금"    value={fmtCurrency(account?.us_cash,             'USD')} />
+              <MetricCard title="총 평가"   value={fmtCurrency(account?.us_portfolio_value,  'USD')} />
+              <MetricCard title="주문 가능" value={fmtCurrency(account?.us_buying_power,      'USD')} />
+            </MetricGrid>
+          </AccountGroup>
+        )}
+      </AccountRow>
+      <StatusRow>
+        <MetricCard title="상태" value={account?.status ?? '—'} />
+        {account?.is_paper && <PaperBadge>모의투자</PaperBadge>}
+      </StatusRow>
 
       {/* 스케줄러 컨트롤 */}
       <ControlCard>
@@ -152,12 +207,17 @@ export default function AutoTrading() {
             {schedulerStatus?.next_run && (
               <ControlHint>
                 다음 실행: {schedulerStatus.next_run.slice(0, 19).replace('T', ' ')}
-                {schedulerStatus.market_open != null && (
-                  <MarketStatus open={schedulerStatus.market_open}>
-                    &nbsp;·&nbsp;{schedulerStatus.market_open ? '장 열림' : '장 마감'}
-                  </MarketStatus>
-                )}
               </ControlHint>
+            )}
+            {schedulerStatus != null && (
+              <MarketStatusRow>
+                <MarketStatus open={schedulerStatus.krx_open}>
+                  KRX {schedulerStatus.krx_open ? '장 열림' : '장 마감'}
+                </MarketStatus>
+                <MarketStatus open={schedulerStatus.nyse_open}>
+                  NYSE {schedulerStatus.nyse_open ? '장 열림' : '장 마감'}
+                </MarketStatus>
+              </MarketStatusRow>
             )}
           </ControlLabel>
           <SwitchRoot
@@ -284,7 +344,7 @@ export default function AutoTrading() {
         </StyledTabs>
       </Section>
 
-      {/* 스케줄러 실행 히스토리 */}
+      {/* 스케줄러 실행 기록 — 시장 탭 무관, 항상 표시 */}
       <Section>
         <SectionTitle>스케줄러 실행 기록</SectionTitle>
         <StrategyList>
@@ -341,12 +401,12 @@ export default function AutoTrading() {
         />
       </Section>
 
-      {/* 거래 로그 */}
+      {/* 거래 로그 — 시장 탭 필터 적용 */}
       <Section>
         <SectionTitle>거래 로그</SectionTitle>
         <DataTable<TradeLog>
           columns={tradeLogColumns}
-          data={logsData?.logs ?? []}
+          data={filteredLogs}
           emptyMessage="거래 로그 없음"
         />
         <Pagination
@@ -644,7 +704,14 @@ const Empty = styled.div`
   font-size: ${fontSize.sm};
 `
 
+const MarketStatusRow = styled.div`
+  display: flex;
+  gap: ${spacing.md};
+  margin-top: 2px;
+`
+
 const MarketStatus = styled.span<{ open: boolean }>`
+  font-size: ${fontSize.xs};
   color: ${({ open }) => (open ? colors.positive : colors.textMuted)};
 `
 
@@ -652,4 +719,71 @@ const MarketStatus = styled.span<{ open: boolean }>`
 const RunError = styled.span`
   color: ${colors.negative};
   white-space: pre-wrap;
+`
+
+const MarketTabBar = styled.div`
+  display: flex;
+  gap: ${spacing.xs};
+  margin-bottom: ${spacing.xl};
+  border-bottom: 1px solid ${colors.border};
+  padding-bottom: 0;
+`
+
+const MarketTabBtn = styled.button<{ active: boolean }>`
+  padding: ${spacing.sm} ${spacing.lg};
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid ${({ active }) => (active ? colors.primary : 'transparent')};
+  color: ${({ active }) => (active ? colors.primary : colors.textMuted)};
+  font-size: ${fontSize.sm};
+  font-weight: ${({ active }) => (active ? 600 : 400)};
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: -1px;
+
+  &:hover:not([disabled]) {
+    color: ${colors.text};
+  }
+`
+
+const AccountRow = styled.div`
+  display: flex;
+  gap: ${spacing.lg};
+  margin-bottom: ${spacing.md};
+  flex-wrap: wrap;
+`
+
+const AccountGroup = styled.div`
+  flex: 1;
+  min-width: 280px;
+  background: ${colors.bgCard};
+  border: 1px solid ${colors.border};
+  border-radius: ${radius.md};
+  padding: ${spacing.md} ${spacing.lg};
+`
+
+const AccountGroupTitle = styled.div`
+  font-size: ${fontSize.xs};
+  font-weight: 600;
+  color: ${colors.textMuted};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: ${spacing.sm};
+`
+
+const StatusRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${spacing.md};
+  margin-bottom: ${spacing.xl};
+`
+
+const PaperBadge = styled.span`
+  font-size: ${fontSize.xs};
+  font-weight: 600;
+  color: ${colors.primary};
+  background: ${colors.primary}22;
+  border: 1px solid ${colors.primary}44;
+  border-radius: ${radius.sm};
+  padding: 2px ${spacing.sm};
 `

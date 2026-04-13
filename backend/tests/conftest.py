@@ -2,12 +2,15 @@
 
 DB_PATH must be set before core.database is first imported, because engine and
 SessionLocal are module-level singletons created at import time.
+
+강제 할당(setdefault 아님): 쉘에 DB_PATH가 export되어 있거나 .env가 미리
+로드된 상태에서도 반드시 테스트 전용 DB를 사용하도록 한다.
 """
 
 import os
 
-# Set test DB path before any core imports
-os.environ.setdefault("DB_PATH", "tests/data/test.db")
+# Set test DB path before any core imports — 강제 override (setdefault 사용 금지)
+os.environ["DB_PATH"] = "tests/data/test.db"
 
 import pytest
 from fastapi.testclient import TestClient

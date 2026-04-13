@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
-from app.application.scheduler import ensure_started, get_status
+from app.application.scheduler import ensure_started, get_status, trigger_now
 from app.infrastructure import kis_client
 from app.infrastructure import repository as db
 from app.infrastructure.config import get_settings
@@ -29,7 +29,8 @@ def scheduler_status():
     return {
         "running": status["running"],
         "next_run": status["next_run"].isoformat() if status["next_run"] else None,
-        "market_open": status["market_open"],
+        "krx_open": status["krx_open"],
+        "nyse_open": status["nyse_open"],
     }
 
 
@@ -46,8 +47,9 @@ def get_scheduler_runs(
 
 @router.post("/scheduler/trigger")
 def trigger_scheduler():
-    """스케줄러 설정 재적용 (시작/중지/재구성)."""
+    """스케줄러 즉시 실행."""
     ensure_started()
+    trigger_now()
     return {"success": True}
 
 

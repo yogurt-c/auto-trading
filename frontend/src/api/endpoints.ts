@@ -17,6 +17,8 @@ import type {
   PerformanceSummary,
   RealizedTrade,
   Currency,
+  EvaluationResult,
+  StrategyPreset,
 } from './types'
 
 // ── Portfolio ──────────────────────────────────────────────────────────────
@@ -110,12 +112,23 @@ export const strategiesApi = {
         dca_amount: s.dca_amount ?? null,
         dca_frequency_days: s.dca_frequency_days ?? null,
         max_position: s.max_position ?? null,
+        entry_bb_lower_touch: s.entry_bb_lower_touch ?? null,
+        entry_macd_hist_positive: s.entry_macd_hist_positive ?? null,
+        entry_disparity_below: s.entry_disparity_below ?? null,
+        entry_volume_surge: s.entry_volume_surge ?? null,
+        entry_sma_cross: s.entry_sma_cross ?? null,
         created_at: s.created_at,
         last_checked_at: s.last_checked_at ?? null,
         last_triggered_at: s.last_triggered_at ?? null,
         updated_at: s.updated_at ?? '',
       }))
     }),
+
+  evaluate: (id: number) =>
+    api.get<EvaluationResult>(`/strategies/${id}/evaluate`).then(r => r.data),
+
+  presets: () =>
+    api.get<StrategyPreset[]>('/strategies/presets').then(r => r.data),
 
   updateStatus: (id: number, status: StrategyStatus) =>
     api.patch<any>(`/strategies/${id}/status`, { status }).then(r => r.data as Strategy),

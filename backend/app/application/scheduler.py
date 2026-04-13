@@ -20,19 +20,21 @@ _NYSE_OPEN = time(9, 30)
 _NYSE_CLOSE = time(16, 0)
 
 
-def _is_market_open() -> bool:
-    """KRX(한국) 또는 NYSE(미국) 장 시간 여부 확인.
-
-    KRX: 평일 09:00~15:30 KST
-    NYSE: 평일 09:30~16:00 ET
-    """
+def _is_krx_open() -> bool:
+    """KRX 장 시간 여부 확인. 평일 09:00~15:30 KST."""
     now_kst_dt = datetime.now(_KST)
+    return now_kst_dt.weekday() < 5 and _KRX_OPEN <= now_kst_dt.time() < _KRX_CLOSE
+
+
+def _is_nyse_open() -> bool:
+    """NYSE 장 시간 여부 확인. 평일 09:30~16:00 ET."""
     now_et = datetime.now(_ET)
+    return now_et.weekday() < 5 and _NYSE_OPEN <= now_et.time() < _NYSE_CLOSE
 
-    krx_open = now_kst_dt.weekday() < 5 and _KRX_OPEN <= now_kst_dt.time() < _KRX_CLOSE
-    nyse_open = now_et.weekday() < 5 and _NYSE_OPEN <= now_et.time() < _NYSE_CLOSE
 
-    return krx_open or nyse_open
+def _is_market_open() -> bool:
+    """KRX 또는 NYSE 중 하나라도 열려 있으면 True."""
+    return _is_krx_open() or _is_nyse_open()
 
 
 _scheduler: BackgroundScheduler | None = None
@@ -54,9 +56,12 @@ def _job() -> None:
     logger.debug("scheduler job fired")
 
     # 장 외 시간에는 그냥 종료
-    if not _is_market_open():
+    krx_open = _is_krx_open()
+    nyse_open = _is_nyse_open()
+    if not (krx_open or nyse_open):
         logger.info("market closed — run skipped")
         return
+    logger.info(f"market open — KRX={krx_open}, NYSE={nyse_open}")
 
     # limit order 체결분 포함 최신 포지션으로 갱신 + 미결 주문 상태 동기화
     try:
@@ -87,9 +92,21 @@ def _job() -> None:
     error_msg: str | None = None
     try:
         active = get_strategies(status="active")
-        ids = [s["id"] for s in active]
-        logger.info(f"trade executor started — {len(ids)} active strategies")
-        summary_text = run_trade_executor()
+        markets_open = [m for m, flag in (("KR", krx_open), ("US", nyse_open)) if flag]
+        eligible = [s for s in active if s["market"] in markets_open]
+        ids = [s["id"] for s in eligible]
+        if not ids:
+            logger.info(f"no active strategies for open markets {markets_open} — run skipped")
+            update_scheduler_run(
+                run["id"],
+                finished_at=now_kst(),
+                status="success",
+                strategies_checked=0,
+                summary=f"열린 시장({', '.join(markets_open)})에 해당하는 활성 전략 없음",
+            )
+            return
+        logger.info(f"trade executor started — {len(ids)} strategies for markets {markets_open}")
+        summary_text = run_trade_executor(markets_open=markets_open)
         update_strategies_last_checked(ids)
         success = True
         logger.info(f"trade executor completed — run_id={run['id']}, strategies={len(ids)}")
@@ -145,6 +162,13 @@ def ensure_started() -> None:
         logger.info(f"scheduler started, interval={interval}min")
 
 
+def trigger_now() -> None:
+    """스케줄러 작업 즉시 실행 (백그라운드 스레드)."""
+    t = threading.Thread(target=_job, daemon=True, name="manual_trigger")
+    t.start()
+    logger.info("manual scheduler trigger started")
+
+
 def _stop() -> None:
     global _scheduler
     if _scheduler and _scheduler.running:
@@ -155,9 +179,10 @@ def _stop() -> None:
 
 def get_status() -> dict:
     """현재 스케줄러 상태 반환. UI에서 표시용."""
-    market_open = _is_market_open()
+    krx_open = _is_krx_open()
+    nyse_open = _is_nyse_open()
     if _scheduler and _scheduler.running:
         job = _scheduler.get_job("trade_executor")
         next_run = job.next_run_time if job else None
-        return {"running": True, "next_run": next_run, "market_open": market_open}
-    return {"running": False, "next_run": None, "market_open": market_open}
+        return {"running": True, "next_run": next_run, "krx_open": krx_open, "nyse_open": nyse_open}
+    return {"running": False, "next_run": None, "krx_open": krx_open, "nyse_open": nyse_open}

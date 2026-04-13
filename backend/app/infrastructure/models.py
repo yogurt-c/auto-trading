@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .timezone import now_kst
@@ -69,6 +69,11 @@ class Strategy(DictMixin, Base):
     dca_amount: Mapped[float | None] = mapped_column(Float, nullable=True)  # currency 단위
     dca_frequency_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_position: Mapped[float | None] = mapped_column(Float, nullable=True)  # currency 단위
+    entry_bb_lower_touch: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    entry_macd_hist_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    entry_disparity_below: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_volume_surge: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_sma_cross: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, default="active")
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

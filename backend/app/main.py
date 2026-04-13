@@ -1,10 +1,12 @@
 """FastAPI 백엔드 진입점."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv(".env")
+# backend/ 기준 절대경로로 .env 로드 — override=False이므로 이미 set된 환경변수는 유지됨
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware

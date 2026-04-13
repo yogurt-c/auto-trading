@@ -6,7 +6,6 @@ Tool schemas (for Anthropic tool_use) are also defined here.
 
 from __future__ import annotations
 
-import math
 import threading
 from typing import Any
 
@@ -19,9 +18,9 @@ from app.domain.trading_strategy.services import (
     StrategyEvaluator,
     StrategyValidator,
 )
-from app.domain.trading_strategy.value_objects import MarketData
+from app.domain.trading_strategy.value_objects import ValidationSeverity, ValidationWarning
 from app.infrastructure import kis_client
-from app.infrastructure import market as market_data
+from app.infrastructure import market as market_module
 from app.infrastructure import repository as db
 
 _strategy_validator = StrategyValidator()
@@ -75,9 +74,14 @@ def _validate_strategy_params(
     dca_amount: float | None,
     dca_frequency_days: int | None,
     max_position: float | None,
-) -> list[str]:
-    """전략 파라미터 충돌·범위 검증. 경고 메시지 목록 반환."""
-    domain_warnings = _strategy_validator.validate(
+    entry_bb_lower_touch: bool | None = None,
+    entry_macd_hist_positive: bool | None = None,
+    entry_disparity_below: float | None = None,
+    entry_volume_surge: float | None = None,
+    entry_sma_cross: int | None = None,
+) -> list[ValidationWarning]:
+    """전략 파라미터 충돌·범위 검증. severity 포함 ValidationWarning 목록 반환."""
+    return _strategy_validator.validate(
         strategy_type=strategy_type,
         entry_price_drop_pct=entry_price_drop_pct,
         entry_rsi_below=entry_rsi_below,
@@ -87,8 +91,12 @@ def _validate_strategy_params(
         dca_amount=dca_amount,
         dca_frequency_days=dca_frequency_days,
         max_position=max_position,
+        entry_bb_lower_touch=entry_bb_lower_touch,
+        entry_macd_hist_positive=entry_macd_hist_positive,
+        entry_disparity_below=entry_disparity_below,
+        entry_volume_surge=entry_volume_surge,
+        entry_sma_cross=entry_sma_cross,
     )
-    return [w.message for w in domain_warnings]
 
 
 def save_strategy(
@@ -107,6 +115,11 @@ def save_strategy(
     dca_amount: float | None = None,
     dca_frequency_days: int | None = None,
     max_position: float | None = None,
+    entry_bb_lower_touch: bool | None = None,
+    entry_macd_hist_positive: bool | None = None,
+    entry_disparity_below: float | None = None,
+    entry_volume_surge: float | None = None,
+    entry_sma_cross: int | None = None,
     strategy_id: int | None = None,
 ) -> dict:
     """Save or update a trading strategy in the database."""
@@ -122,7 +135,7 @@ def save_strategy(
             market = inferred_market
             currency = inferred_currency
 
-    warnings = _validate_strategy_params(
+    all_validations = _validate_strategy_params(
         strategy_type=strategy_type,
         entry_price_drop_pct=entry_price_drop_pct,
         entry_rsi_below=entry_rsi_below,
@@ -132,9 +145,28 @@ def save_strategy(
         dca_amount=dca_amount,
         dca_frequency_days=dca_frequency_days,
         max_position=max_position,
+        entry_bb_lower_touch=entry_bb_lower_touch,
+        entry_macd_hist_positive=entry_macd_hist_positive,
+        entry_disparity_below=entry_disparity_below,
+        entry_volume_surge=entry_volume_surge,
+        entry_sma_cross=entry_sma_cross,
     )
-    for w in warnings:
-        logger.warning(w)
+    errors = [w for w in all_validations if w.severity == ValidationSeverity.ERROR]
+    soft_warnings = [w for w in all_validations if w.severity == ValidationSeverity.WARNING]
+
+    for w in all_validations:
+        if w.severity == ValidationSeverity.ERROR:
+            logger.error(f"[error] save_strategy blocked: {w.message}")
+        else:
+            logger.warning(f"[warning] save_strategy: {w.message}")
+
+    if errors:
+        return {
+            "success": False,
+            "errors": [e.message for e in errors],
+            "warnings": [w.message for w in soft_warnings],
+        }
+
     result = db.save_strategy(
         name=name,
         strategy_type=strategy_type,
@@ -151,9 +183,16 @@ def save_strategy(
         dca_amount=dca_amount,
         dca_frequency_days=dca_frequency_days,
         max_position=max_position,
+        entry_bb_lower_touch=entry_bb_lower_touch,
+        entry_macd_hist_positive=entry_macd_hist_positive,
+        entry_disparity_below=entry_disparity_below,
+        entry_volume_surge=entry_volume_surge,
+        entry_sma_cross=entry_sma_cross,
         strategy_id=strategy_id,
     )
-    return {"success": True, "strategy": result, "warnings": warnings}
+    action = "updated" if strategy_id else "created"
+    logger.info(f"strategy {action}: id={result.get('id')} name={name!r} type={strategy_type}")
+    return {"success": True, "strategy": result, "warnings": [w.message for w in soft_warnings]}
 
 
 def update_strategy_status(strategy_id: int, status: str) -> dict:
@@ -202,40 +241,23 @@ def evaluate_strategy(strategy_id: int) -> dict:
         return {"error": "Strategy has no ticker set"}
 
     yf_ticker = _to_yf_ticker(ticker)
+    market = strategy.get("market", "US")
+    currency = strategy.get("currency", "USD")
+
     try:
-        data = yf.download(yf_ticker, period="60d", interval="1d", progress=False, auto_adjust=True)
+        mkt = market_module.fetch_market_data(
+            ticker=ticker,
+            market=market,
+            currency=currency,
+            yf_ticker=yf_ticker,
+        )
     except Exception as e:
-        return {"error": f"Failed to fetch price data for {ticker} ({yf_ticker}): {e}"}
-    if data.empty:
-        return {"error": f"Could not fetch price data for {ticker} ({yf_ticker})"}
-
-    # I/O: current price and 30-day high
-    current_price = float(data["Close"].squeeze().iloc[-1])
-    high_30d = float(data["High"].squeeze().tail(30).max())
-
-    # I/O: RSI calculation
-    closes = data["Close"].squeeze()
-    delta = closes.diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    rs = gain / loss
-    rsi_series = 100 - 100 / (1 + rs)
-    rsi = float(rsi_series.iloc[-1])
-    if math.isnan(rsi):
-        rsi = 50.0
+        return {"error": f"Failed to fetch market data for {ticker} ({yf_ticker}): {e}"}
 
     # I/O: current holding from DB
     holdings = db.get_all_holdings()
     current_holding = next((h for h in holdings if h["ticker"] == ticker.upper()), None)
 
-    currency = strategy.get("currency", "USD")
-    mkt = MarketData(
-        ticker=ticker,
-        current_price=current_price,
-        currency=currency,
-        high_30d=high_30d,
-        rsi_14=rsi,
-    )
     result = _strategy_evaluator.evaluate(strategy, mkt, current_holding)
 
     logger.debug(
@@ -357,7 +379,7 @@ def _place_order_locked(
     if max_position and side.lower() == "buy":
         check_price = limit_price
         if check_price is None:
-            prices = market_data.get_current_prices([ticker.upper()])
+            prices = market_module.get_current_prices([ticker.upper()])
             check_price = prices.get(ticker.upper())
 
         if check_price:
@@ -655,6 +677,27 @@ STRATEGY_TOOLS = [
                 "max_position": {
                     "type": "number",
                     "description": "최대 포지션 한도 (currency 단위). KR이면 KRW, US이면 USD",
+                },
+                "entry_bb_lower_touch": {
+                    "type": "boolean",
+                    "description": "Buy trigger: true이면 현재가가 볼린저 하단 이하일 때 진입",
+                },
+                "entry_macd_hist_positive": {
+                    "type": "boolean",
+                    "description": "Buy trigger: MACD 히스토그램이 양수일 때 진입",
+                },
+                "entry_disparity_below": {
+                    "type": "number",
+                    "description": "Buy trigger: 이격도(%) 임계값 이하 시 진입 (음수, 예: -5.0)",
+                },
+                "entry_volume_surge": {
+                    "type": "number",
+                    "description": "Buy trigger: 거래량 비율 임계값 초과 시 진입 (예: 2.0)",
+                },
+                "entry_sma_cross": {
+                    "type": "integer",
+                    "enum": [20, 60],
+                    "description": "Buy trigger: 현재가가 SMA(N) 위에 있을 때 진입",
                 },
                 "strategy_id": {
                     "type": "integer",

@@ -71,7 +71,13 @@ def test_empty_holdings(service):
 def test_kr_us_split(service):
     """국내·해외 혼합 보유 시 KR/US 분리 집계."""
     holdings = [
-        {"ticker": "005930", "shares": 10.0, "avg_price": 70000.0, "market": "KR", "currency": "KRW"},
+        {
+            "ticker": "005930",
+            "shares": 10.0,
+            "avg_price": 70000.0,
+            "market": "KR",
+            "currency": "KRW",
+        },
         {"ticker": "AAPL", "shares": 5.0, "avg_price": 150.0, "market": "US", "currency": "USD"},
     ]
     snap = service.calculate(holdings, {"005930": 75000.0, "AAPL": 160.0})
@@ -95,7 +101,13 @@ def test_kr_us_split(service):
 def test_kr_only(service):
     """국내 종목만 보유 → kr만 존재, us는 None."""
     holdings = [
-        {"ticker": "005930", "shares": 10.0, "avg_price": 70000.0, "market": "KR", "currency": "KRW"}
+        {
+            "ticker": "005930",
+            "shares": 10.0,
+            "avg_price": 70000.0,
+            "market": "KR",
+            "currency": "KRW",
+        }
     ]
     snap = service.calculate(holdings, {"005930": 75000.0})
     assert snap.kr is not None

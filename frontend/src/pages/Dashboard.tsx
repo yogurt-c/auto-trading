@@ -9,7 +9,6 @@ import { portfolioApi } from '../api/endpoints'
 import MetricCard from '../components/MetricCard'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
 import { fmtCurrency } from '../lib/format'
-import type { Currency } from '../api/types'
 
 const CHART_COLORS = [
   '#6c7cff', '#34d399', '#fbbf24', '#f87171', '#a78bfa',
@@ -73,68 +72,52 @@ export default function Dashboard() {
       )}
 
       {/* 국내 포트폴리오 (KRW) */}
-      {summary?.kr && (
-        <Section>
-          <SectionTitle>국내 포트폴리오 (KRW)</SectionTitle>
-          <MetricGrid>
-            <MetricCard
-              title="Market Value"
-              value={fmtCurrency(summary.kr.total_market_value, 'KRW')}
-            />
-            <MetricCard
-              title="Cost Basis"
-              value={fmtCurrency(summary.kr.total_cost_basis, 'KRW')}
-            />
-            <MetricCard
-              title="Unrealized P&L"
-              value={fmtCurrency(summary.kr.total_pnl, 'KRW', summary.kr.total_pnl >= 0)}
-              delta={summary.kr.total_pnl_pct}
-            />
-            <MetricCard
-              title="보유 종목"
-              value={summary.kr.holding_count}
-            />
-          </MetricGrid>
-        </Section>
-      )}
+      <Section>
+        <SectionTitle>국내 포트폴리오 (KRW)</SectionTitle>
+        <MetricGrid>
+          <MetricCard
+            title="Market Value"
+            value={summary?.kr ? fmtCurrency(summary.kr.total_market_value, 'KRW') : '—'}
+          />
+          <MetricCard
+            title="Cost Basis"
+            value={summary?.kr ? fmtCurrency(summary.kr.total_cost_basis, 'KRW') : '—'}
+          />
+          <MetricCard
+            title="Unrealized P&L"
+            value={summary?.kr ? fmtCurrency(summary.kr.total_pnl, 'KRW', summary.kr.total_pnl >= 0) : '—'}
+            delta={summary?.kr?.total_pnl_pct}
+          />
+          <MetricCard
+            title="보유 종목"
+            value={summary?.kr?.holding_count ?? '—'}
+          />
+        </MetricGrid>
+      </Section>
 
       {/* 해외 포트폴리오 (USD) */}
-      {summary?.us && (
-        <Section>
-          <SectionTitle>해외 포트폴리오 (USD)</SectionTitle>
-          <MetricGrid>
-            <MetricCard
-              title="Market Value"
-              value={fmtCurrency(summary.us.total_market_value, 'USD')}
-            />
-            <MetricCard
-              title="Cost Basis"
-              value={fmtCurrency(summary.us.total_cost_basis, 'USD')}
-            />
-            <MetricCard
-              title="Unrealized P&L"
-              value={fmtCurrency(summary.us.total_pnl, 'USD', summary.us.total_pnl >= 0)}
-              delta={summary.us.total_pnl_pct}
-            />
-            <MetricCard
-              title="보유 종목"
-              value={summary.us.holding_count}
-            />
-          </MetricGrid>
-        </Section>
-      )}
-
-      {/* 데이터 없을 때 빈 상태 */}
-      {!summary?.kr && !summary?.us && !isLoading && (
-        <Section>
-          <MetricGrid>
-            <MetricCard title="Market Value" value="—" />
-            <MetricCard title="Cost Basis" value="—" />
-            <MetricCard title="Unrealized P&L" value="—" />
-            <MetricCard title="보유 종목" value="—" />
-          </MetricGrid>
-        </Section>
-      )}
+      <Section>
+        <SectionTitle>해외 포트폴리오 (USD)</SectionTitle>
+        <MetricGrid>
+          <MetricCard
+            title="Market Value"
+            value={summary?.us ? fmtCurrency(summary.us.total_market_value, 'USD') : '—'}
+          />
+          <MetricCard
+            title="Cost Basis"
+            value={summary?.us ? fmtCurrency(summary.us.total_cost_basis, 'USD') : '—'}
+          />
+          <MetricCard
+            title="Unrealized P&L"
+            value={summary?.us ? fmtCurrency(summary.us.total_pnl, 'USD', summary.us.total_pnl >= 0) : '—'}
+            delta={summary?.us?.total_pnl_pct}
+          />
+          <MetricCard
+            title="보유 종목"
+            value={summary?.us?.holding_count ?? '—'}
+          />
+        </MetricGrid>
+      </Section>
 
       {/* 수동 가격 입력 */}
       {fetchErrors.length > 0 && (

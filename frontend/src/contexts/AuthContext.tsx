@@ -6,6 +6,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   isLoading: boolean
   login: (password: string) => Promise<void>
+  setSession: (token: string) => void
   logout: () => void
 }
 
@@ -31,12 +32,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const setSession = useCallback((accessToken: string) => {
+    sessionStorage.setItem('auth_token', accessToken)
+    sessionStorage.setItem('app_configured', 'true')
+    setToken(accessToken)
+  }, [])
+
   const login = useCallback(async (password: string) => {
     const data = await authApi.login(password)
-    sessionStorage.setItem('auth_token', data.access_token)
-    sessionStorage.setItem('app_configured', 'true')
-    setToken(data.access_token)
-  }, [])
+    setSession(data.access_token)
+  }, [setSession])
 
   const logout = useCallback(() => {
     sessionStorage.removeItem('auth_token')
@@ -51,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!token,
         isLoading,
         login,
+        setSession,
         logout,
       }}
     >

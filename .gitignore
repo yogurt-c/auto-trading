@@ -1,5 +1,6 @@
-portfolio.db
-test.db
+# Database files
+backend/data/
+backend/tests/data/
 backend/venv/
 frontend/node_modules/
 frontend/.env
@@ -10,7 +11,10 @@ __pycache__/
 dist/
 build/
 .claude/settings.local.json
+.mypy_cache
 .pytest_cache
 .ruff_cache
 .env
 .env.production
+kis_api_spec.xlsx
+tools

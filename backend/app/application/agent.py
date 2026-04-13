@@ -126,14 +126,44 @@ Workflow:
 2. Use web_search to research the ticker if needed
 3. Identify the correct market (KR/US) and currency (KRW/USD) from the ticker
 4. Summarize the agreed strategy clearly
-5. Call save_strategy to persist the structured parameters
-6. Confirm the strategy was saved — show key parameters in a table including market and currency
+5. Before calling save_strategy, verify ALL of the following constraints are satisfied.
+   If any constraint would be violated, fix the value first — do NOT call save_strategy
+   with invalid parameters:
+   - Non-DCA strategies (momentum, value, stop_loss, take_profit, custom): at least ONE
+     entry condition from the list below must be set
+   - DCA strategies: dca_amount and dca_frequency_days are both required
+   - dca_amount must not exceed max_position (if max_position is set)
+   - stop_loss_pct must be strictly less than take_profit_pct (e.g., stop=-7, take=+10 ✓)
+   - sell_ratio must be between 0 (exclusive) and 1 (inclusive)
+   - dca_frequency_days must be a positive integer
+6. Call save_strategy to persist the structured parameters
+   - If success is false and errors exist: autonomously fix the invalid parameters
+     based on the error messages and call save_strategy again immediately.
+     Do NOT ask the user — resolve blocking errors on your own.
+   - If success is true and warnings exist: proceed to step 7, then inform
+     the user about the warnings so they can decide whether to adjust.
+7. Confirm the strategy was saved — show key parameters in a table including market and currency
 
-Always extract these structured fields when possible:
-- entry_price_drop_pct (e.g., buy on -5% dip from 30d high)
-- take_profit_pct / stop_loss_pct
-- dca_amount + dca_frequency_days for DCA strategies (amount in currency units)
-- max_position to cap total exposure (in currency units)
+Available entry conditions (non-DCA strategies must include at least one):
+- entry_price_drop_pct: float, MUST be negative — buy when price drops N% from 30-day high
+  (e.g., -5.0 = buy on 5% dip). Positive values are invalid.
+- entry_rsi_below: float, 0-100 — buy when RSI(14) ≤ threshold (e.g., 30.0 for oversold)
+- entry_bb_lower_touch: bool — buy when price touches or breaks below Bollinger lower band
+- entry_macd_hist_positive: bool — buy when MACD histogram turns positive (bearish→bullish)
+- entry_disparity_below: float, MUST be negative — buy when 20-day disparity ≤ threshold
+  (e.g., -5.0 = buy when price is 5% below 20-day MA). Positive values are invalid.
+- entry_volume_surge: float, MUST be > 1.0 — buy when volume >= Nx 20-day average
+  (e.g., 2.0 = buy on 2x volume surge). Values ≤ 1.0 are invalid.
+- entry_sma_cross: int, MUST be 20 or 60 — buy when price crosses above SMA(N).
+  Only 20 and 60 are supported; any other value is invalid.
+
+Other structured fields:
+- take_profit_pct: float — exit when P&L ≥ N% (e.g., 10.0)
+- stop_loss_pct: float — exit when P&L ≤ N% (e.g., -7.0); must be < take_profit_pct
+- sell_ratio: float (0, 1] — fraction of position to sell on exit signal (e.g., 1.0 = full)
+- dca_amount: float — amount per DCA buy in currency units (required for DCA)
+- dca_frequency_days: int, positive — interval between DCA buys (required for DCA)
+- max_position: float — maximum total exposure in currency units; dca_amount must not exceed this
 - market: 'KR' or 'US'
 - currency: 'KRW' or 'USD'
 
@@ -488,10 +518,14 @@ def stream_orchestrator(
     )
 
 
-def run_trade_executor() -> str:
+def run_trade_executor(markets_open: list[str] | None = None) -> str:
     """
     Run the trade executor sub-agent once (for scheduled/manual trigger).
     Returns the agent's summary.
+
+    Args:
+        markets_open: 현재 열린 시장 목록 (e.g. ['KR'], ['US'], ['KR', 'US']).
+                      None이면 에이전트가 현재 시각으로 판단.
     """
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -501,11 +535,18 @@ def run_trade_executor() -> str:
     kst_str = now_kst.strftime("%Y-%m-%d %H:%M KST (%A)")
     et_str = now_et.strftime("%H:%M ET")
 
+    if markets_open is not None:
+        market_info = (
+            f"Currently open markets: {', '.join(markets_open) if markets_open else 'none'}. "
+        )
+        market_info += "Only evaluate and execute strategies for these markets. "
+    else:
+        market_info = "KR strategies trade KST 09:00-15:30, US strategies trade ET 09:30-16:00. "
+
     task = (
         f"Current time: {kst_str} / {et_str}\n\n"
         "Review all active strategies, check current market conditions, "
-        "and execute any triggered orders. "
-        "KR strategies trade KST 09:00-15:30, US strategies trade ET 09:30-16:00."
+        "and execute any triggered orders. " + market_info
     )
 
     logger.info("run_trade_executor started")

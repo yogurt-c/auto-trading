@@ -152,6 +152,11 @@ def save_strategy(
     dca_amount: float | None = None,
     dca_frequency_days: int | None = None,
     max_position: float | None = None,
+    entry_bb_lower_touch: bool | None = None,
+    entry_macd_hist_positive: bool | None = None,
+    entry_disparity_below: float | None = None,
+    entry_volume_surge: float | None = None,
+    entry_sma_cross: int | None = None,
     strategy_id: int | None = None,
 ) -> dict:
     with get_session() as s:
@@ -178,6 +183,11 @@ def save_strategy(
         strategy.dca_amount = dca_amount
         strategy.dca_frequency_days = dca_frequency_days
         strategy.max_position = max_position
+        strategy.entry_bb_lower_touch = entry_bb_lower_touch
+        strategy.entry_macd_hist_positive = entry_macd_hist_positive
+        strategy.entry_disparity_below = entry_disparity_below
+        strategy.entry_volume_surge = entry_volume_surge
+        strategy.entry_sma_cross = entry_sma_cross
         s.flush()
         return strategy.to_dict()
 

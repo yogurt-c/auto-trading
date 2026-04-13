@@ -30,7 +30,8 @@ backend/
 │   │   ├── auth.py           # JWT 생성·검증, bcrypt 해싱, Secret Key 관리 (DB 기반)
 │   │   ├── config.py         # Settings dataclass (SQLAlchemy 기반, 캐시)
 │   │   ├── database.py       # SQLite init (Alembic), get_session() 컨텍스트매니저
-│   │   ├── market.py         # get_current_prices() — Yahoo Finance (yfinance)
+│   │   ├── indicators.py     # 기술지표 계산 함수 (calc_rsi/sma/ema/macd/bollinger…) — I/O 없음
+│   │   ├── market.py         # get_current_prices() + fetch_market_data() — Yahoo Finance (yfinance)
 │   │   ├── models.py         # SQLAlchemy ORM 모델 (Holding, Strategy, TradeLog …)
 │   │   └── repository.py     # Data Access Layer — 전체 테이블 CRUD 함수
 │   └── domain/               # Domain Layer — 순수 비즈니스 로직 (I/O 없음)
@@ -50,7 +51,8 @@ backend/
 ├── alembic/                  # DB 스키마 마이그레이션
 │   ├── env.py
 │   └── versions/
-│       └── 001_initial_schema.py  # KIS 브로커 통합 전체 스키마 (market/currency 포함)
+│           ├── 001_initial_schema.py             # KIS 브로커 통합 전체 스키마 (market/currency 포함)
+│           └── 002_add_indicator_entry_conditions.py  # 기술지표 진입 조건 컬럼 5개 추가
 └── tests/                    # pytest (unit + integration + e2e)
     ├── conftest.py
     ├── unit/domain/

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -30,8 +30,26 @@ class MarketData(BaseModel):
     ticker: str
     current_price: float
     currency: str = "USD"  # 'KRW' | 'USD'
+    market: Literal["KR", "US"] = "US"
     high_30d: float | None = None
     rsi_14: float | None = None
+    # 이동평균
+    sma_20: float | None = None
+    sma_60: float | None = None
+    ema_12: float | None = None
+    ema_26: float | None = None
+    # MACD
+    macd_line: float | None = None
+    macd_signal: float | None = None
+    macd_hist: float | None = None
+    # 볼린저 밴드
+    bb_upper: float | None = None
+    bb_middle: float | None = None
+    bb_lower: float | None = None
+    # 보조 지표
+    disparity_20: float | None = None
+    atr_14: float | None = None
+    volume_ratio_20: float | None = None
 
 
 class EvaluationResult(BaseModel):
@@ -44,6 +62,7 @@ class EvaluationResult(BaseModel):
     entry_triggered: bool
     exit_triggered: bool
     conditions: dict[str, Any]
+    signal_score: float | None = None  # 0.0 ~ 1.0: 발동된 진입 조건 비율
     holding_avg_price: float | None = None
     current_pnl_pct: float | None = None
     note: str | None = None

@@ -66,10 +66,49 @@ export interface Strategy {
   dca_amount: number | null
   dca_frequency_days: number | null
   max_position: number | null
+  // 기술지표 기반 진입 조건
+  entry_bb_lower_touch: boolean | null
+  entry_macd_hist_positive: boolean | null
+  entry_disparity_below: number | null
+  entry_volume_surge: number | null
+  entry_sma_cross: number | null
   created_at: string
   last_checked_at: string | null
   last_triggered_at: string | null
   updated_at: string
+}
+
+export interface EvaluationCondition {
+  triggered: boolean
+  [key: string]: unknown
+}
+
+export interface EvaluationResult {
+  ticker: string
+  current_price: number
+  entry_triggered: boolean
+  exit_triggered: boolean
+  signal_score: number | null
+  conditions: Record<string, EvaluationCondition>
+  holding_avg_price: number | null
+  current_pnl_pct: number | null
+  note: string | null
+}
+
+export interface StrategyPreset {
+  name: string
+  strategy_type: string
+  description: string
+  risk: 'low' | 'medium' | 'high'
+  entry_rsi_below?: number
+  entry_bb_lower_touch?: boolean
+  entry_macd_hist_positive?: boolean
+  entry_disparity_below?: number
+  entry_volume_surge?: number
+  entry_sma_cross?: number
+  take_profit_pct?: number
+  stop_loss_pct?: number
+  dca_frequency_days?: number
 }
 
 // ── Trading ────────────────────────────────────────────────────────────────
@@ -93,10 +132,12 @@ export interface TradeLog {
 }
 
 export interface AccountInfo {
-  cash: number
-  portfolio_value: number
-  buying_power: number
-  currency: string
+  kr_cash: number
+  kr_portfolio_value: number
+  kr_buying_power: number
+  us_cash: number
+  us_portfolio_value: number
+  us_buying_power: number
   status: string
   is_paper: boolean
 }
@@ -118,7 +159,8 @@ export interface Position {
 export interface SchedulerStatus {
   running: boolean
   next_run: string | null
-  market_open: boolean
+  krx_open: boolean
+  nyse_open: boolean
 }
 
 export interface SchedulerRun {

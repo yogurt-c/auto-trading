@@ -9,7 +9,7 @@ type Mode = 'loading' | 'setup' | 'login'
 
 export default function LoginSetup() {
   const navigate = useNavigate()
-  const { login, isAuthenticated } = useAuth()
+  const { login, setSession, isAuthenticated } = useAuth()
 
   const [mode, setMode] = useState<Mode>('loading')
   const [password, setPassword] = useState('')
@@ -61,8 +61,7 @@ export default function LoginSetup() {
     setIsSubmitting(true)
     try {
       const data = await authApi.setup(password)
-      sessionStorage.setItem('auth_token', data.access_token)
-      sessionStorage.setItem('app_configured', 'true')
+      setSession(data.access_token)
       navigate('/dashboard', { replace: true })
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail

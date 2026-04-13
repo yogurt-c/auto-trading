@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import styled from '@emotion/styled'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { portfolioApi, tradingApi } from '../api/endpoints'
@@ -82,6 +83,9 @@ export default function Holdings() {
     },
   })
 
+  const krHoldings = useMemo(() => holdings?.filter((h: Holding) => h.market === 'KR') ?? [], [holdings])
+  const usHoldings = useMemo(() => holdings?.filter((h: Holding) => h.market !== 'KR') ?? [], [holdings])
+
   return (
     <Page>
       <Header>
@@ -113,11 +117,24 @@ export default function Holdings() {
 
       <Section>
         <SectionTitle>보유 종목 {holdingsLoading ? '(로딩 중...)' : `(${holdings?.length ?? 0})`}</SectionTitle>
-        <DataTable<Holding>
-          columns={holdingColumns}
-          data={holdings ?? []}
-          emptyMessage="보유 종목 없음"
-        />
+
+        <MarketSection>
+          <MarketSectionTitle>국내 ({krHoldings.length})</MarketSectionTitle>
+          <DataTable<Holding>
+            columns={holdingColumns}
+            data={krHoldings}
+            emptyMessage="국내 보유 종목 없음"
+          />
+        </MarketSection>
+
+        <MarketSection>
+          <MarketSectionTitle>해외 ({usHoldings.length})</MarketSectionTitle>
+          <DataTable<Holding>
+            columns={holdingColumns}
+            data={usHoldings}
+            emptyMessage="해외 보유 종목 없음"
+          />
+        </MarketSection>
       </Section>
 
       <Section>
@@ -192,4 +209,19 @@ const SectionTitle = styled.h2`
   font-weight: 600;
   color: ${colors.text};
   margin: 0 0 ${spacing.md};
+`
+
+const MarketSection = styled.div`
+  margin-bottom: ${spacing.lg};
+`
+
+const MarketSectionTitle = styled.h3`
+  font-size: ${fontSize.sm};
+  font-weight: 600;
+  color: ${colors.textMuted};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 ${spacing.sm};
+  padding-bottom: ${spacing.xs};
+  border-bottom: 1px solid ${colors.border};
 `

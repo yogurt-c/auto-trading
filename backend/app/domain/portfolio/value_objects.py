@@ -34,7 +34,7 @@ class HoldingValuation(BaseModel):
     cost_basis: Money
     pnl: Money
     pnl_pct: float
-    market: str = "US"    # "KR" | "US"
+    market: str = "US"  # "KR" | "US"
     currency: str = "USD"  # "KRW" | "USD"
 
 
@@ -43,7 +43,7 @@ class MarketSummary(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    market: str    # "KR" | "US"
+    market: str  # "KR" | "US"
     currency: str  # "KRW" | "USD"
     total_market_value: Money
     total_cost_basis: Money

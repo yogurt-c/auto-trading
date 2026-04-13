@@ -22,7 +22,9 @@ def test_get_portfolio_empty(auth_client):
 
 def test_get_portfolio_with_holdings(auth_client):
     """Mock holdings + mock prices → P&L 포함 응답 (US 종목)."""
-    holdings = [{"ticker": "AAPL", "shares": 10.0, "avg_price": 100.0, "market": "US", "currency": "USD"}]
+    holdings = [
+        {"ticker": "AAPL", "shares": 10.0, "avg_price": 100.0, "market": "US", "currency": "USD"}
+    ]
     with (
         patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
         patch("app.api.portfolio.get_current_prices", return_value={"AAPL": 120.0}),
@@ -53,7 +55,15 @@ def test_get_portfolio_with_holdings(auth_client):
 
 def test_get_portfolio_kr_holding(auth_client):
     """국내 종목 보유 시 KR 분리 summary 반환."""
-    holdings = [{"ticker": "005930", "shares": 10.0, "avg_price": 70000.0, "market": "KR", "currency": "KRW"}]
+    holdings = [
+        {
+            "ticker": "005930",
+            "shares": 10.0,
+            "avg_price": 70000.0,
+            "market": "KR",
+            "currency": "KRW",
+        }
+    ]
     with (
         patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
         patch("app.api.portfolio.get_current_prices", return_value={"005930": 75000.0}),
@@ -68,7 +78,9 @@ def test_get_portfolio_kr_holding(auth_client):
 
 def test_get_portfolio_failed_tickers(auth_client):
     """가격 조회 실패한 ticker는 failed_tickers에 포함, avg_price로 fallback."""
-    holdings = [{"ticker": "UNKNOWN", "shares": 5.0, "avg_price": 50.0, "market": "US", "currency": "USD"}]
+    holdings = [
+        {"ticker": "UNKNOWN", "shares": 5.0, "avg_price": 50.0, "market": "US", "currency": "USD"}
+    ]
     with (
         patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
         patch("app.api.portfolio.get_current_prices", return_value={}),
@@ -85,7 +97,9 @@ def test_get_portfolio_failed_tickers(auth_client):
 
 def test_get_portfolio_response_structure(auth_client):
     """응답에 필수 필드가 모두 포함되어 있는지 확인."""
-    holdings = [{"ticker": "TSLA", "shares": 3.0, "avg_price": 200.0, "market": "US", "currency": "USD"}]
+    holdings = [
+        {"ticker": "TSLA", "shares": 3.0, "avg_price": 200.0, "market": "US", "currency": "USD"}
+    ]
     with (
         patch("app.api.portfolio.db.get_all_holdings", return_value=holdings),
         patch("app.api.portfolio.get_current_prices", return_value={"TSLA": 210.0}),
