@@ -84,7 +84,7 @@ def sync_holdings():
         err_str = str(e)
         if "인증" in err_str or "token" in err_str.lower() or "unauthorized" in err_str.lower():
             raise HTTPException(
-                status_code=401,
+                status_code=503,
                 detail="KIS API 인증 실패. Settings 페이지에서 API 키를 확인해 주세요.",
             )
         raise HTTPException(status_code=503, detail=f"KIS sync 실패: {err_str}")

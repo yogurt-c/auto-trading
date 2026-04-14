@@ -82,7 +82,8 @@ export default function Settings() {
       settingsApi.set(key, value),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] })
-      void qc.invalidateQueries({ queryKey: ['settingsStatus'] })
+      // settingsStatus 검증은 handleSave의 Promise.all 완료 후에만 실행
+      // (개별 키 저장 완료 시 즉시 refetch 시 부분적으로 저장된 상태로 KIS 검증이 실행되는 버그 방지)
       setToast('저장되었습니다')
       setTimeout(() => setToast(null), 2500)
     },
@@ -92,6 +93,8 @@ export default function Settings() {
     const entries = Object.entries(form).filter(([, value]) => value.trim())
     if (entries.length === 0) return
     await Promise.all(entries.map(([key, value]) => mutation.mutateAsync({ key, value: value.trim() })))
+    // 모든 키 저장 완료 후 settingsStatus 재검증
+    void qc.invalidateQueries({ queryKey: ['settingsStatus'] })
   }
 
   const get = (key: string) => form[key] ?? ''

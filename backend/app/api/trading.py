@@ -26,7 +26,7 @@ def get_account():
         err_str = str(e)
         if "인증" in err_str or "token" in err_str.lower() or "unauthorized" in err_str.lower():
             raise HTTPException(
-                status_code=401,
+                status_code=503,
                 detail="KIS API 인증 실패. Settings 페이지에서 API 키와 계좌번호를 확인해 주세요.",
             )
         raise HTTPException(status_code=503, detail=f"KIS API 연결 실패: {err_str}")
