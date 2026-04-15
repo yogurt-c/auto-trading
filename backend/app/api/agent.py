@@ -32,7 +32,12 @@ def chat_stream(req: ChatRequest):
         try:
             history_dicts = [m.model_dump() for m in req.history]
             for chunk in stream_orchestrator(req.message, history_dicts):
-                if chunk.get("type") == "status":
+                chunk_type = chunk.get("type")
+                if chunk_type == "keepalive":
+                    # SSE comment line — keeps the connection alive without
+                    # rendering anything in the browser.
+                    yield ": keepalive\n\n"
+                elif chunk_type == "status":
                     yield f"data: {json.dumps({'status': chunk['text']})}\n\n"
                 else:
                     yield f"data: {json.dumps({'content': chunk['text']})}\n\n"

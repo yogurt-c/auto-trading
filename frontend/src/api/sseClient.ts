@@ -19,18 +19,37 @@ export async function* streamChat(
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(`${API_BASE}/agent/chat/stream`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ message, history }),
-  })
+  // 3분 타임아웃 — subagent(strategy-advisor 등)가 여러 번 API 호출을 수행하므로
+  // 충분한 여유를 두되, 무한 대기는 방지한다.
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 180_000)
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/agent/chat/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message, history }),
+      signal: controller.signal,
+    })
+  } catch (e) {
+    clearTimeout(timeoutId)
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('응답 시간이 초과되었습니다. 다시 시도해 주세요.')
+    }
+    throw e
+  }
 
   if (!response.ok) {
+    clearTimeout(timeoutId)
     throw new Error(`SSE request failed: ${response.status}`)
   }
 
   const reader = response.body?.getReader()
-  if (!reader) throw new Error('Response body is not readable')
+  if (!reader) {
+    clearTimeout(timeoutId)
+    throw new Error('Response body is not readable')
+  }
 
   const decoder = new TextDecoder()
   let buffer = ''
@@ -47,13 +66,15 @@ export async function* streamChat(
 
       for (const line of lines) {
         const trimmed = line.trim()
+        // SSE comment lines (": keepalive") — 연결 유지용, 무시
+        if (trimmed.startsWith(':')) continue
         if (!trimmed.startsWith('data:')) continue
 
-        const json = trimmed.slice(5).trim()
-        if (!json || json === '[DONE]') continue
+        const jsonStr = trimmed.slice(5).trim()
+        if (!jsonStr || jsonStr === '[DONE]') continue
 
         try {
-          const parsed = JSON.parse(json) as { content?: string; status?: string; error?: string }
+          const parsed = JSON.parse(jsonStr) as { content?: string; status?: string; error?: string }
           if (parsed.error) throw new Error(parsed.error)
           if (parsed.status) yield { type: 'status', text: parsed.status }
           if (parsed.content) yield { type: 'content', text: parsed.content }
@@ -64,6 +85,7 @@ export async function* streamChat(
       }
     }
   } finally {
+    clearTimeout(timeoutId)
     reader.releaseLock()
   }
 }

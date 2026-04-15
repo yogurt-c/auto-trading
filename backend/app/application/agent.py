@@ -17,6 +17,8 @@ Token optimizations:
 from __future__ import annotations
 
 import json
+import queue as _queue
+import threading
 import time
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -410,7 +412,9 @@ def run_agent(
             yield {"type": "status", "text": _tool_status(tool_name, tool_input)}
 
             if tool_name == "task":
-                result = _run_subagent(tool_input["agent"], tool_input["task"])
+                result = yield from _run_subagent_with_keepalive(
+                    tool_input["agent"], tool_input["task"]
+                )
             else:
                 result = dispatch_tool(tool_name, tool_input)
 
@@ -423,6 +427,37 @@ def run_agent(
             )
 
         loop_messages.append({"role": "user", "content": tool_results})
+
+
+def _run_subagent_with_keepalive(
+    agent_name: str, task: str
+) -> Generator[dict, None, dict]:
+    """Run subagent in a background thread, yielding keepalive events every 5 s.
+
+    Use as: ``result = yield from _run_subagent_with_keepalive(name, task)``
+
+    PEP 380: the generator's ``return`` value becomes the value of the
+    ``yield from`` expression in the caller, so the caller receives the
+    subagent result without any extra plumbing.
+    """
+    rq: _queue.Queue = _queue.Queue()
+
+    def _bg() -> None:
+        try:
+            rq.put(("ok", _run_subagent(agent_name, task)))
+        except Exception as exc:  # noqa: BLE001
+            rq.put(("err", exc))
+
+    threading.Thread(target=_bg, daemon=True).start()
+
+    while True:
+        try:
+            kind, val = rq.get(timeout=5.0)
+            if kind == "err":
+                raise val  # type: ignore[misc]
+            return val  # type: ignore[return-value]  # PEP 380 generator return
+        except _queue.Empty:
+            yield {"type": "keepalive"}
 
 
 def _run_subagent(agent_name: str, task: str) -> dict:
