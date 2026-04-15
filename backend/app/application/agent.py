@@ -429,9 +429,7 @@ def run_agent(
         loop_messages.append({"role": "user", "content": tool_results})
 
 
-def _run_subagent_with_keepalive(
-    agent_name: str, task: str
-) -> Generator[dict, None, dict]:
+def _run_subagent_with_keepalive(agent_name: str, task: str) -> Generator[dict, None, dict]:
     """Run subagent in a background thread, yielding keepalive events every 5 s.
 
     Use as: ``result = yield from _run_subagent_with_keepalive(name, task)``
@@ -445,7 +443,7 @@ def _run_subagent_with_keepalive(
     def _bg() -> None:
         try:
             rq.put(("ok", _run_subagent(agent_name, task)))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             rq.put(("err", exc))
 
     threading.Thread(target=_bg, daemon=True).start()
