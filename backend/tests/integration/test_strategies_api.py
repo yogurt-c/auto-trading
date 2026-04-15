@@ -12,12 +12,22 @@ import pytest
 
 
 def _create_strategy(client, **kwargs):
-    """Helper: POST /api/strategies and return the strategy dict."""
-    payload = {"name": "Test Strategy", "strategy_type": "value"}
+    """Helper: POST /api/strategies and return the strategy dict.
+
+    Default payload uses value + entry_price_drop_pct so the validator passes.
+    Individual tests can override any field via kwargs.
+    """
+    payload: dict = {
+        "name": "Test Strategy",
+        "strategy_type": "value",
+        "entry_price_drop_pct": -5.0,  # 비DCA 전략은 진입 조건 최소 1개 필수
+    }
     payload.update(kwargs)
     resp = client.post("/api/strategies", json=payload)
     assert resp.status_code == 200
-    return resp.json()["strategy"]
+    data = resp.json()
+    assert data.get("success") is True, f"save_strategy blocked: {data.get('errors')}"
+    return data["strategy"]
 
 
 def _delete_strategy(client, strategy_id):
@@ -196,7 +206,7 @@ def test_dca_due_never_triggered(auth_client):
         auth_client,
         name="New DCA",
         strategy_type="dca",
-        dca_amount_usd=100.0,
+        dca_amount=100.0,  # dca_amount_usd → dca_amount (API 스키마 필드명)
         dca_frequency_days=7,
     )
     strategy_id = s["id"]

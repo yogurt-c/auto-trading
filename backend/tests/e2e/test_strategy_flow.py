@@ -117,7 +117,7 @@ def test_strategy_create_and_dca_check(auth_client):
             "name": "E2E DCA Flow",
             "strategy_type": "dca",
             "ticker": "SPY",
-            "dca_amount_usd": 200.0,
+            "dca_amount": 200.0,  # dca_amount_usd → dca_amount (API 스키마 필드명)
             "dca_frequency_days": 14,
         },
     )
