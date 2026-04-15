@@ -456,6 +456,7 @@ def get_order(broker_order_id: str, market: str = "US") -> dict:
     cano, acnt_cd = _parse_account(s.kis_account_no)
 
     if market == "KR":
+        today = datetime.now(tz=_KST).strftime("%Y%m%d")
         tr_id = _KR_ORDER_INQUIRE_PAPER if s.kis_paper else _KR_ORDER_INQUIRE_REAL
         resp = httpx.get(
             f"{_base_url()}/uapi/domestic-stock/v1/trading/inquire-order",
@@ -466,8 +467,8 @@ def get_order(broker_order_id: str, market: str = "US") -> dict:
                 "ODNO": broker_order_id,
                 "ORD_GNO_BRNO": "",
                 "INQR_DVSN": "01",
-                "INQR_STRT_DT": "",
-                "INQR_END_DT": "",
+                "INQR_STRT_DT": today,
+                "INQR_END_DT": today,
             },
             timeout=10,
         )

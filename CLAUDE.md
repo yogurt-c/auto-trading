@@ -18,3 +18,4 @@ AI-powered financial portfolio management tool — monitors holdings, runs autom
 | [domain-portfolio.md](.claude/docs/domain-portfolio.md) | Portfolio 도메인 명세 |
 | [domain-strategy.md](.claude/docs/domain-strategy.md) | TradingStrategy 도메인 명세 |
 | [checklist-development.md](.claude/docs/checklist-development.md) | 구현 완료 후 점검 체크리스트 |
+| [kis-api-spec.md](.claude/docs/kis-api-spec.md) | KIS OpenAPI 전체 목록 및 프로젝트 사용 API 상세 스펙 (Request/Response 필드, TR_ID, 예시 포함) |

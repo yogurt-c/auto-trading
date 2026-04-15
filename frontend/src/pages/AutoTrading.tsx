@@ -113,6 +113,11 @@ export default function AutoTrading() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['strategies'] }),
   })
 
+  const deleteStrategyMutation = useMutation({
+    mutationFn: (id: number) => strategiesApi.delete(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['strategies'] }),
+  })
+
   const triggerMutation = useMutation({
     mutationFn: schedulerApi.trigger,
     onSuccess: () => {
@@ -301,6 +306,16 @@ export default function AutoTrading() {
                                 {s.status === 'active' ? '일시정지' : '활성화'}
                               </ActionBtn>
                             )}
+                            <DeleteBtn
+                              onClick={() => {
+                                if (window.confirm(`"${s.name}" 전략을 삭제하시겠습니까?`)) {
+                                  deleteStrategyMutation.mutate(s.id)
+                                }
+                              }}
+                              disabled={deleteStrategyMutation.isPending}
+                            >
+                              삭제
+                            </DeleteBtn>
                             <StatusBadge status={s.status} />
                           </StrategyActions>
                         </StrategyHeader>
@@ -657,6 +672,23 @@ const ActionBtn = styled.button`
     border-color: ${colors.primary};
     color: ${colors.primary};
   }
+`
+
+const DeleteBtn = styled.button`
+  background: transparent;
+  border: 1px solid ${colors.border};
+  color: ${colors.textMuted};
+  border-radius: ${radius.sm};
+  padding: 4px ${spacing.md};
+  font-size: ${fontSize.xs};
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) {
+    border-color: ${colors.negative};
+    color: ${colors.negative};
+  }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
 `
 
 const StrategyDetail = styled.div`

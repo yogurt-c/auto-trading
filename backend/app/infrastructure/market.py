@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 import pandas as pd
 import yfinance as yf
+
+# KR 티커: 6자리 숫자 (예: 005930, 035720)
+_KR_TICKER_RE = re.compile(r"^\d{6}$")
+
+
+def _to_yf_ticker(ticker: str) -> str:
+    """KR 6자리 숫자 티커에 .KS 접미사를 추가합니다."""
+    return f"{ticker}.KS" if _KR_TICKER_RE.match(ticker) else ticker
+
 
 from app.domain.trading_strategy.value_objects import MarketData
 from app.infrastructure.indicators import (
@@ -26,13 +36,18 @@ yf.set_tz_cache_location("/tmp/yfinance_cache")
 def get_current_prices(tickers: list[str]) -> dict[str, float]:
     """
     여러 티커의 현재가를 한 번에 조회합니다.
+    KR 6자리 숫자 티커는 자동으로 .KS 접미사를 붙여 조회합니다.
     조회 실패한 티커는 결과에서 제외됩니다.
     """
     if not tickers:
         return {}
 
+    # 원본 ticker → yfinance ticker 매핑 (KR: .KS 추가)
+    yf_map = {t: _to_yf_ticker(t) for t in tickers}
+    yf_tickers = list(yf_map.values())
+
     data = yf.download(
-        tickers=tickers,
+        tickers=yf_tickers,
         period="1d",
         interval="1m",
         progress=False,
@@ -41,8 +56,8 @@ def get_current_prices(tickers: list[str]) -> dict[str, float]:
 
     prices: dict[str, float] = {}
 
-    if len(tickers) == 1:
-        ticker = tickers[0]
+    if len(yf_tickers) == 1:
+        orig_ticker = tickers[0]
         if not data.empty:
             close = data["Close"]
             # yfinance 2.x returns a DataFrame even for a single ticker
@@ -50,12 +65,12 @@ def get_current_prices(tickers: list[str]) -> dict[str, float]:
                 close = close.iloc[:, 0]
             val = close.dropna()
             if not val.empty:
-                prices[ticker] = float(val.iloc[-1])
+                prices[orig_ticker] = float(val.iloc[-1])
     else:
-        for ticker in tickers:
+        for orig_ticker, yf_ticker in yf_map.items():
             try:
-                price = float(data["Close"][ticker].dropna().iloc[-1])
-                prices[ticker] = price
+                price = float(data["Close"][yf_ticker].dropna().iloc[-1])
+                prices[orig_ticker] = price
             except (KeyError, IndexError):
                 pass
 

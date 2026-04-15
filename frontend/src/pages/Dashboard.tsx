@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import styled from '@emotion/styled'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -22,26 +21,12 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   })
 
-  const [manualPrices, setManualPrices] = useState<Record<string, string>>({})
-
   const holdings = data?.holdings ?? []
   const summary = data?.summary
-  const fetchErrors = data?.failed_tickers ?? []
-
-  // 수동 가격 재계산
-  const effectiveHoldings = holdings.map(h => {
-    const manual = manualPrices[h.ticker]
-    if (!manual || isNaN(parseFloat(manual))) return h
-    const price = parseFloat(manual)
-    const mv = price * h.shares
-    const pnl = mv - h.avg_price * h.shares
-    const pnlPct = h.avg_price > 0 ? (pnl / (h.avg_price * h.shares)) * 100 : 0
-    return { ...h, current_price: price, market_value: mv, pnl, pnl_pct: pnlPct }
-  })
 
   // 국내 / 해외 분리
-  const krHoldings = effectiveHoldings.filter(h => h.market === 'KR')
-  const usHoldings = effectiveHoldings.filter(h => h.market !== 'KR')
+  const krHoldings = holdings.filter(h => h.market === 'KR')
+  const usHoldings = holdings.filter(h => h.market !== 'KR')
 
   const krPieData = krHoldings
     .filter(h => h.market_value != null && h.market_value > 0)
@@ -51,7 +36,7 @@ export default function Dashboard() {
     .filter(h => h.market_value != null && h.market_value > 0)
     .map(h => ({ name: h.ticker, value: h.market_value! }))
 
-  const barData = effectiveHoldings
+  const barData = holdings
     .filter(h => h.pnl_pct != null)
     .map(h => ({ symbol: h.ticker, return: parseFloat((h.pnl_pct ?? 0).toFixed(2)) }))
     .sort((a, b) => b.return - a.return)
@@ -118,28 +103,6 @@ export default function Dashboard() {
           />
         </MetricGrid>
       </Section>
-
-      {/* 수동 가격 입력 */}
-      {fetchErrors.length > 0 && (
-        <Section>
-          <SectionTitle>수동 가격 입력 필요</SectionTitle>
-          <ManualGrid>
-            {fetchErrors.map(sym => (
-              <ManualField key={sym}>
-                <ManualLabel>{sym}</ManualLabel>
-                <ManualInput
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="현재가 입력"
-                  value={manualPrices[sym] ?? ''}
-                  onChange={e => setManualPrices(p => ({ ...p, [sym]: e.target.value }))}
-                />
-              </ManualField>
-            ))}
-          </ManualGrid>
-        </Section>
-      )}
 
       {/* 차트 */}
       <ChartGrid>
@@ -267,38 +230,6 @@ const MetricGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: ${spacing.md};
-`
-
-const ManualGrid = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: ${spacing.md};
-`
-
-const ManualField = styled.div`
-  display: flex;
-  align-items: center;
-  gap: ${spacing.sm};
-`
-
-const ManualLabel = styled.span`
-  font-size: ${fontSize.sm};
-  font-weight: 600;
-  color: ${colors.text};
-  min-width: 60px;
-`
-
-const ManualInput = styled.input`
-  background: ${colors.bgSurface};
-  border: 1px solid ${colors.border};
-  border-radius: ${radius.sm};
-  padding: 6px ${spacing.md};
-  color: ${colors.text};
-  font-size: ${fontSize.sm};
-  width: 120px;
-  outline: none;
-
-  &:focus { border-color: ${colors.primary}; }
 `
 
 const ChartGrid = styled.div`
