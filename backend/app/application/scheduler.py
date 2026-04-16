@@ -20,21 +20,21 @@ _NYSE_OPEN = time(9, 30)
 _NYSE_CLOSE = time(16, 0)
 
 
-def _is_krx_open() -> bool:
+def is_krx_open(now: datetime | None = None) -> bool:
     """KRX 장 시간 여부 확인. 평일 09:00~15:30 KST."""
-    now_kst_dt = datetime.now(_KST)
+    now_kst_dt = (now or datetime.now(_KST)).astimezone(_KST)
     return now_kst_dt.weekday() < 5 and _KRX_OPEN <= now_kst_dt.time() < _KRX_CLOSE
 
 
-def _is_nyse_open() -> bool:
+def is_nyse_open(now: datetime | None = None) -> bool:
     """NYSE 장 시간 여부 확인. 평일 09:30~16:00 ET."""
-    now_et = datetime.now(_ET)
+    now_et = (now or datetime.now(_ET)).astimezone(_ET)
     return now_et.weekday() < 5 and _NYSE_OPEN <= now_et.time() < _NYSE_CLOSE
 
 
 def _is_market_open() -> bool:
     """KRX 또는 NYSE 중 하나라도 열려 있으면 True."""
-    return _is_krx_open() or _is_nyse_open()
+    return is_krx_open() or is_nyse_open()
 
 
 _scheduler: BackgroundScheduler | None = None
@@ -56,8 +56,8 @@ def _job() -> None:
     logger.debug("scheduler job fired")
 
     # 장 외 시간에는 그냥 종료
-    krx_open = _is_krx_open()
-    nyse_open = _is_nyse_open()
+    krx_open = is_krx_open()
+    nyse_open = is_nyse_open()
     if not (krx_open or nyse_open):
         logger.info("market closed — run skipped")
         return
@@ -179,8 +179,8 @@ def _stop() -> None:
 
 def get_status() -> dict:
     """현재 스케줄러 상태 반환. UI에서 표시용."""
-    krx_open = _is_krx_open()
-    nyse_open = _is_nyse_open()
+    krx_open = is_krx_open()
+    nyse_open = is_nyse_open()
     if _scheduler and _scheduler.running:
         job = _scheduler.get_job("trade_executor")
         next_run = job.next_run_time if job else None

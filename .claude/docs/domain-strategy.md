@@ -33,6 +33,9 @@ AI 에이전트가 자연어로 전략을 생성하고, 스케줄러가 주기�
 - `entry_condition.entry_sma_cross`은 **20 또는 60** 만 허용
 - `dca_amount ≤ max_position` (DCA 1회 금액이 포지션 한도 이하)
 - `status` 전이: `active → paused → completed` (역방향 불가)
+- `max_position` 한도 초과 시 entry_triggered 차단은 **Application 레이어(`tools.py`)에서** 수행 — Domain의 `StrategyEvaluator`는 순수 조건 평가만 담당하며, I/O(현재 보유량 조회)가 필요한 한도 체크는 Application이 후처리
+- 시장 시간 체크는 **Application 레이어(`scheduler.py`, `tools.py`)에서** 코드로 수행 — LLM 프롬프트 지시에만 의존하지 않음
+- `exit_triggered`는 `current_holding`이 존재할 때만 발동 — 보유 없이 청산 신호가 생성되어서는 안 됨
 
 **현재 코드 위치**: `backend/app/infrastructure/models.py` (ORM), `backend/app/infrastructure/repository.py` (DAL)
 
@@ -153,6 +156,7 @@ def evaluate(
   - `entry_triggered: bool`, `exit_triggered: bool`
   - `conditions: dict` — 각 조건별 상세 (reference, current, threshold, triggered)
   - `signal_score: float | None` — 발동 진입 조건 수 / 전체 활성 진입 조건 수 (0.0 ~ 1.0)
+    - **소비 규칙**: Trade Executor가 주문 판단 시 반드시 참고해야 함. 진입 조건 2개 이상인 전략에서 `signal_score < 0.5`이면 주문 보류. `signal_score`가 계산만 되고 어디서도 소비되지 않으면 버그로 간주
   - `holding_avg_price: float | None`, `current_pnl_pct: float | None`
 - **현재 위치**: `backend/app/domain/trading_strategy/services.py::StrategyEvaluator.evaluate()`
 
@@ -220,6 +224,21 @@ class TradeLogRepository(Protocol):
 ```
 
 **현재 구현 위치**: `backend/app/infrastructure/repository.py` (`save_trade_log`, `get_trade_logs`)
+
+---
+
+## 레이어별 책임 경계
+
+| 검증/판단 | 담당 레이어 | 이유 |
+|-----------|------------|------|
+| 진입/청산 조건 평가 (RSI, 볼린저, MACD 등) | Domain (`StrategyEvaluator`) | 순수 계산, I/O 없음 |
+| 전략 파라미터 유효성 검증 | Domain (`StrategyValidator`) | 불변조건 사전 검사, I/O 없음 |
+| DCA 일정 도래 여부 | Domain (`DcaScheduleChecker`) | 시간 비교만, I/O 없음 |
+| max_position 한도 초과 차단 | Application (`tools.py`) | 현재 보유량 DB 조회 필요 (I/O) |
+| 시장 개장 시간 체크 | Application (`scheduler.py`, `tools.py`) | 현재 시각 + 시장 규칙 판단 |
+| 주문 제출 및 직렬화 | Application (`tools.py`) | 외부 API 호출 (I/O) |
+
+**원칙**: Domain 서비스는 I/O 없는 순수 함수만 포함한다. I/O가 필요한 비즈니스 규칙 검증은 Application 레이어가 Domain 결과를 받아 후처리한다.
 
 ---
 

@@ -316,30 +316,52 @@ def _get_overseas_balance_summary() -> dict:
 
 
 def _get_domestic_positions() -> list[dict]:
-    """국내 보유 종목 조회."""
+    """국내 보유 종목 조회. 5xx 오류 시 최대 3회 재시도."""
     s = get_settings()
     cano, acnt_cd = _parse_account(s.kis_account_no)
     tr_id = _KR_BALANCE_PAPER if s.kis_paper else _KR_BALANCE_REAL
 
-    resp = httpx.get(
-        f"{_base_url()}/uapi/domestic-stock/v1/trading/inquire-balance",
-        headers=_headers(tr_id),
-        params={
-            "CANO": cano,
-            "ACNT_PRDT_CD": acnt_cd,
-            "AFHR_FLPR_YN": "N",
-            "OFL_YN": "",
-            "INQR_DVSN": "01",
-            "UNPR_DVSN": "01",
-            "FUND_STTL_ICLD_YN": "N",
-            "FNCG_AMT_AUTO_RDPT_YN": "N",
-            "PRCS_DVSN": "01",
-            "CTX_AREA_FK100": "",
-            "CTX_AREA_NK100": "",
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        if attempt > 0:
+            delay = attempt  # 1s, 2s
+            logger.info(f"국내 포지션 재시도 {attempt}/2 ({delay}s 대기)")
+            time.sleep(delay)
+        resp = httpx.get(
+            f"{_base_url()}/uapi/domestic-stock/v1/trading/inquire-balance",
+            headers=_headers(tr_id),
+            params={
+                "CANO": cano,
+                "ACNT_PRDT_CD": acnt_cd,
+                "AFHR_FLPR_YN": "N",
+                "OFL_YN": "",
+                "INQR_DVSN": "01",
+                "UNPR_DVSN": "01",
+                "FUND_STTL_ICLD_YN": "N",
+                "FNCG_AMT_AUTO_RDPT_YN": "N",
+                "PRCS_DVSN": "01",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+            },
+            timeout=10,
+        )
+        if resp.status_code >= 500:
+            try:
+                err_body = resp.json()
+                logger.error(
+                    f"국내 포지션 조회 HTTP {resp.status_code}: "
+                    f"rt_cd={err_body.get('rt_cd')} msg_cd={err_body.get('msg_cd')} "
+                    f"msg={err_body.get('msg1', '').strip()}"
+                )
+            except Exception:
+                logger.error(f"국내 포지션 조회 HTTP {resp.status_code}: {resp.text[:200]}")
+            last_exc = RuntimeError(f"HTTP {resp.status_code}")
+            continue
+        resp.raise_for_status()  # 4xx: 즉시 전파 (재시도 안 함)
+        break
+    else:
+        raise last_exc  # type: ignore[misc]
+
     data = _check_response(resp.json(), "domestic-balance")
 
     result = []

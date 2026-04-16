@@ -202,15 +202,27 @@ Workflow:
 2. Call get_strategies(status='active') to get all active strategies
 3. Call get_broker_account() to check current positions and buying power
 4. For each strategy, call evaluate_strategy(strategy_id) to check conditions
-   - For DCA strategies: also call check_dca_due(strategy_id); only proceed if is_due is true
+   - For DCA strategies:
+     (a) Also call check_dca_due(strategy_id); only proceed if is_due is true
+     (b) If the DCA strategy also has entry conditions
+         (entry_rsi_below, entry_price_drop_pct, etc.),
+         only proceed if BOTH is_due is true AND entry_triggered is true
+     (c) If the DCA strategy has NO entry conditions (pure periodic DCA), is_due alone is sufficient
    - Do NOT use web_search to manually fetch prices or compute conditions
 5. If evaluate_strategy returns entry_triggered=true or exit_triggered=true, call place_order
    - Always pass max_position from the strategy if it is set
-   - Check market hours before placing: KR strategies only during KST 09:00-15:30,
-     US strategies only during ET 09:30-16:00
+   - Market hours are enforced by the system; orders outside trading hours
+     will be automatically rejected
 6. In your summary, mention: which strategies were checked, what conditions
    were evaluated, which orders were placed, and any concerns about strategy
    execution consistency based on historical runs.
+
+Signal score guidance (evaluate_strategy result):
+- signal_score (0.0~1.0): ratio of triggered entry conditions to total active entry conditions
+- Strategy with 2+ entry conditions: only place buy order if signal_score >= 0.5
+  (e.g., 1/3 triggered = 0.33 → skip; 2/3 = 0.67 → proceed)
+- Strategy with exactly 1 entry condition: entry_triggered alone is sufficient
+- Always include signal_score in ai_reasoning
 
 Rules:
 - NEVER exceed max_position per strategy (amounts are in the strategy's currency: KRW or USD)
@@ -285,7 +297,7 @@ SUBAGENTS: dict[str, SubAgentDef] = {
         system_prompt=TRADE_EXECUTOR_PROMPT,
         tools=[*TRADE_TOOLS, WEB_SEARCH_TOOL],
         model=HAIKU,  # Haiku: rule-based execution, no complex reasoning needed
-        max_tokens=1024,
+        max_tokens=2048,
         max_iterations=6,
     ),
 }
@@ -488,7 +500,6 @@ def _run_subagent(agent_name: str, task: str) -> dict:
                 messages=messages,
             )
 
-            text_parts = []
             tool_uses = []
 
             for block in response.content:
@@ -496,6 +507,12 @@ def _run_subagent(agent_name: str, task: str) -> dict:
                     text_parts.append(block.text)
                 elif block.type == "tool_use":
                     tool_uses.append(block)
+
+            if response.stop_reason == "max_tokens" and not tool_uses:
+                logger.warning(f"subagent '{agent_name}' hit max_tokens, continuing generation")
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": "계속해주세요."})
+                continue
 
             if response.stop_reason == "end_turn" or not tool_uses:
                 logger.info(f"subagent '{agent_name}' completed")

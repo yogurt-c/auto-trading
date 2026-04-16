@@ -351,6 +351,10 @@ class StrategyEvaluator:
         else:
             signal_score = None
 
+        # 보유 없이 exit_triggered가 발동되지 않도록 방어
+        if current_holding is None:
+            exit_triggered = False
+
         return EvaluationResult(
             ticker=market_data.ticker,
             current_price=round(current_price, 4),

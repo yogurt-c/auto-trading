@@ -61,7 +61,8 @@ def test_place_order_buy_success(auth_client):
     """POST /api/trading/orders → buy 주문 성공."""
     _patch_order = patch("app.application.tools.kis_client.place_order", return_value=_MOCK_ORDER)
     _patch_sync = patch("app.application.tools.kis_client.sync_positions", return_value=[])
-    with _patch_order, _patch_sync:
+    _patch_nyse = patch("app.application.tools.is_nyse_open", return_value=True)
+    with _patch_order, _patch_sync, _patch_nyse:
         resp = auth_client.post(
             "/api/trading/orders",
             json={"ticker": "AAPL", "side": "buy", "qty": 1.0},
@@ -81,9 +82,11 @@ def test_place_order_buy_success(auth_client):
 
 def test_place_order_failure(auth_client):
     """POST /api/trading/orders → Alpaca 오류 시 success=False."""
-    with patch(
+    _patch_order = patch(
         "app.application.tools.kis_client.place_order", side_effect=Exception("Order rejected")
-    ):
+    )
+    _patch_nyse = patch("app.application.tools.is_nyse_open", return_value=True)
+    with _patch_order, _patch_nyse:
         resp = auth_client.post(
             "/api/trading/orders",
             json={"ticker": "AAPL", "side": "buy", "qty": 1.0},
@@ -97,9 +100,11 @@ def test_place_order_failure(auth_client):
 
 def test_place_order_logged_on_failure(auth_client):
     """POST /api/trading/orders → 실패 시에도 trade log에 failed 상태로 기록."""
-    with patch(
+    _patch_order = patch(
         "app.application.tools.kis_client.place_order", side_effect=Exception("Connection error")
-    ):
+    )
+    _patch_nyse = patch("app.application.tools.is_nyse_open", return_value=True)
+    with _patch_order, _patch_nyse:
         resp = auth_client.post(
             "/api/trading/orders",
             json={"ticker": "TSLA", "side": "buy", "qty": 2.0},
@@ -261,7 +266,8 @@ def test_place_limit_order_captures_filled_price(auth_client):
     }
     _patch_order = patch("app.application.tools.kis_client.place_order", return_value=_mock_order)
     _patch_sync = patch("app.application.tools.kis_client.sync_positions", return_value=[])
-    with _patch_order, _patch_sync:
+    _patch_nyse = patch("app.application.tools.is_nyse_open", return_value=True)
+    with _patch_order, _patch_sync, _patch_nyse:
         resp = auth_client.post(
             "/api/trading/orders",
             json={
@@ -294,7 +300,8 @@ def test_place_order_with_strategy_id(auth_client):
         "app.application.tools.kis_client.place_order", return_value=_mock_strategy_order
     )
     _patch_sync = patch("app.application.tools.kis_client.sync_positions", return_value=[])
-    with _patch_order, _patch_sync:
+    _patch_nyse = patch("app.application.tools.is_nyse_open", return_value=True)
+    with _patch_order, _patch_sync, _patch_nyse:
         resp = auth_client.post(
             "/api/trading/orders",
             json={
@@ -408,6 +415,7 @@ def test_place_order_filled_price_zero_no_realized_trade(auth_client):
         with (
             patch("app.application.tools.kis_client.place_order", return_value=_mock_order),
             patch("app.application.tools.kis_client.sync_positions", return_value=[]),
+            patch("app.application.tools.is_nyse_open", return_value=True),
         ):
             resp = auth_client.post(
                 "/api/trading/orders",

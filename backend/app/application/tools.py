@@ -12,6 +12,7 @@ from typing import Any
 import yfinance as yf
 from loguru import logger
 
+from app.application.scheduler import is_krx_open, is_nyse_open
 from app.domain.portfolio.services import PortfolioValuationService, RealizedPnlAggregator
 from app.domain.trading_strategy.services import (
     DcaScheduleChecker,
@@ -260,11 +261,41 @@ def evaluate_strategy(strategy_id: int) -> dict:
 
     result = _strategy_evaluator.evaluate(strategy, mkt, current_holding)
 
+    result_dict = result.model_dump()
+
+    # max_position 한도 초과 시 entry_triggered 차단 (place_order까지 도달하지 않도록)
+    max_position = strategy.get("max_position")
+    if max_position and result_dict["entry_triggered"]:
+        strategy_currency = strategy.get("currency", "USD")
+        # 통화 단위 일관성 검증
+        if mkt.currency and mkt.currency != strategy_currency:
+            logger.warning(
+                f"evaluate_strategy id={strategy_id}: currency mismatch — "
+                f"strategy={strategy_currency}, market_data={mkt.currency}"
+            )
+            result_dict["note"] = (
+                f"통화 단위 불일치 경고: 전략={strategy_currency}, 시장데이터={mkt.currency}. "
+                "max_position 한도 체크 결과가 부정확할 수 있습니다."
+            )
+        current_qty = current_holding.get("shares", 0) if current_holding else 0
+        current_value = current_qty * mkt.current_price
+        if current_value >= max_position:
+            result_dict["entry_triggered"] = False
+            result_dict["note"] = (
+                f"포지션 한도 초과로 매수 차단: "
+                f"현재 {current_value:,.0f} >= 한도 {max_position:,.0f} {strategy_currency}"
+            )
+            logger.info(
+                f"evaluate_strategy id={strategy_id}: entry blocked — "
+                f"position {current_value:,.0f} >= "
+                f"max_position {max_position:,.0f} {strategy_currency}"
+            )
+
     logger.debug(
         f"evaluate_strategy id={strategy_id}: "
-        f"entry={result.entry_triggered}, exit={result.exit_triggered}"
+        f"entry={result_dict['entry_triggered']}, exit={result_dict['exit_triggered']}"
     )
-    return result.model_dump()
+    return result_dict
 
 
 def get_broker_account() -> dict:
@@ -374,6 +405,20 @@ def _place_order_locked(
 ) -> dict:
     market = kis_client.ticker_market(ticker)
     currency = kis_client.ticker_currency(ticker)
+
+    # 시장 시간 검증 — 장 외 시간 주문 차단
+    if market == "KR" and not is_krx_open():
+        logger.warning(f"order rejected — KRX closed: ticker={ticker}")
+        return {
+            "success": False,
+            "error": "장 외 시간: KR 시장은 KST 09:00-15:30에만 주문 가능합니다",
+        }
+    if market == "US" and not is_nyse_open():
+        logger.warning(f"order rejected — NYSE closed: ticker={ticker}")
+        return {
+            "success": False,
+            "error": "장 외 시간: US 시장은 ET 09:30-16:00에만 주문 가능합니다",
+        }
 
     # max_position 한도 검증 (매수 시에만)
     if max_position and side.lower() == "buy":

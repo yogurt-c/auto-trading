@@ -7,6 +7,9 @@ AI-powered financial portfolio management tool — monitors holdings, runs autom
 - `frontend/pages/` must only use `frontend.api_client` — never import `backend/` directly
 - KIS is configured for **Paper Trading** (모의투자, safe for testing)
 - 구현 완료 후 커밋 전에 반드시 [checklist-development.md](.claude/docs/checklist-development.md)의 모든 항목을 확인하고, 해당 항목을 스스로 실행(테스트 실행·빌드·문서 업데이트 등)한다 — 사용자가 요청하지 않아도 자동으로 수행한다
+- dict key로 ORM 필드에 접근할 때 반드시 `backend/app/infrastructure/models.py`의 컬럼명을 확인한다 — 추측 금지 (예: Holding은 `shares`이지 `quantity`가 아님)
+- 포지션 한도·시장 시간·주문 가능 여부 등 비즈니스 불변조건은 반드시 **코드 레벨**에서 검증한다 — LLM 프롬프트 지시에만 의존하지 않는다
+- 도메인 Value Object에 새 필드를 추가하면, 그 필드를 **소비하는 로직**(평가 판단, 로깅, UI 표시)도 같은 작업에서 구현한다 — 계산만 하고 사용하지 않는 필드를 남기지 않는다
 
 ## References
 

@@ -26,3 +26,14 @@
 ## 레이어 의존 방향
 - [ ] `backend/domain/` 코드가 `sqlalchemy`, `yfinance` 등 외부 패키지를 import하지 않는가
 - [ ] `frontend/src/pages/` 컴포넌트가 `backend/` 경로를 직접 import하지 않고 `frontend/src/api/endpoints.ts`를 통해 접근하는가
+
+## ORM 필드명 일관성
+- [ ] dict key로 ORM 필드에 접근하는 코드가 `models.py` 컬럼명과 정확히 일치하는가 (예: Holding → `shares`, TradeLog → `qty`·`side`)
+- [ ] 새 컬럼을 `models.py`에 추가했다면, 해당 컬럼을 사용하는 모든 코드 경로에서 동일한 이름을 사용하는가
+
+## 도메인 필드 완전성
+- [ ] 도메인 Value Object에 새 필드를 추가했다면, 그 필드를 **소비하는** 로직(평가 판단, 프롬프트 가이드, UI 표시)도 함께 구현했는가
+
+## 비즈니스 규칙 검증 위치
+- [ ] 포지션 한도·시장 시간·주문 유효성 등 비즈니스 불변조건이 **코드 레벨**에서 검증되는가 — LLM 프롬프트 지시에만 의존하는 항목이 없는가
+- [ ] I/O가 필요한 비즈니스 규칙 검증(DB 조회 필요)은 Application 레이어에서 처리하는가
