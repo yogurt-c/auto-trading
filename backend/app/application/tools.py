@@ -462,7 +462,17 @@ def _place_order_locked(
     if side.lower() == "sell":
         holdings = db.get_all_holdings()
         holding = next((h for h in holdings if h["ticker"] == ticker.upper()), None)
-        avg_cost = holding["avg_price"] if holding else None
+        if holding is None:
+            logger.warning(f"{ticker} 로컬 holdings 없음 — KIS 재동기화 후 재조회")
+            kis_client.sync_positions()
+            holdings = db.get_all_holdings()
+            holding = next((h for h in holdings if h["ticker"] == ticker.upper()), None)
+        if holding is None:
+            return {
+                "success": False,
+                "error": f"{ticker} 포지션 없음: 보유하지 않은 종목은 매도할 수 없습니다.",
+            }
+        avg_cost = holding["avg_price"]
 
         # sell_ratio 코드 레벨 강제: strategy_id가 있으면 보유 수량 비율로 qty 보정
         if strategy_id is not None and holding and holding["shares"] > 0:
@@ -506,7 +516,6 @@ def _place_order_locked(
         if (
             side.lower() == "sell"
             and order["status"] == "filled"
-            and avg_cost is not None
             and filled_price is not None
             and filled_price > 0
         ):
@@ -585,6 +594,15 @@ def sync_pending_orders() -> int:
 
                 # 매도 체결 시 realized_trade 생성
                 avg_cost_snap = log.get("avg_cost_snapshot")
+                if (
+                    new_status == "filled"
+                    and log["side"].lower() == "sell"
+                    and avg_cost_snap is None
+                ):
+                    logger.error(
+                        f"realized_trade 생성 불가: trade_log {log['id']} {log['ticker']} "
+                        f"avg_cost_snapshot=None (place_order 시점 holdings 누락 추정)"
+                    )
                 if (
                     new_status == "filled"
                     and log["side"].lower() == "sell"

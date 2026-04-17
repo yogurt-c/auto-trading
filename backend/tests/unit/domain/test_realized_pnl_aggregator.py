@@ -100,6 +100,8 @@ def test_period_grouping_by_day(aggregator):
     assert periods["2026-03-15"].realized_pnl == pytest.approx(-100.0)
     assert periods["2026-03-10"].trade_count == 1
     assert periods["2026-03-15"].trade_count == 1
+    assert periods["2026-03-10"].currency == "USD"
+    assert periods["2026-03-15"].currency == "USD"
 
 
 def test_period_grouping_by_month(aggregator):
@@ -117,6 +119,7 @@ def test_period_grouping_by_month(aggregator):
     assert len(summary.by_period) == 1
     bucket = summary.by_period[0]
     assert bucket.period == "2026-03"
+    assert bucket.currency == "USD"
     assert bucket.trade_count == 2
     assert bucket.realized_pnl == pytest.approx(100.0 + 150.0)
 
@@ -137,6 +140,72 @@ def test_period_grouping_across_months(aggregator):
     periods = {p.period: p for p in summary.by_period}
     assert "2026-02" in periods
     assert "2026-03" in periods
+
+
+def test_period_grouping_splits_by_currency(aggregator):
+    """동일 날짜 KRW + USD → 통화별 2개 버킷으로 분리."""
+    trades = [
+        _make_rt(
+            id=1,
+            ticker="AAPL",
+            currency="USD",
+            executed_at="2026-03-10T10:00:00",
+            sell_price=150.0,
+            avg_cost=100.0,
+            qty=10.0,
+        ),
+        _make_rt(
+            id=2,
+            ticker="005930",
+            currency="KRW",
+            executed_at="2026-03-10T11:00:00",
+            sell_price=80000.0,
+            avg_cost=60000.0,
+            qty=5.0,
+        ),
+    ]
+    summary = aggregator.aggregate(trades, {}, "2026-03-01", "2026-03-31", group_by="day")
+
+    assert len(summary.by_period) == 2
+    buckets = {(p.period, p.currency): p for p in summary.by_period}
+    assert ("2026-03-10", "USD") in buckets
+    assert ("2026-03-10", "KRW") in buckets
+    assert buckets[("2026-03-10", "USD")].realized_pnl == pytest.approx(500.0)
+    assert buckets[("2026-03-10", "KRW")].realized_pnl == pytest.approx(100_000.0)
+    assert buckets[("2026-03-10", "USD")].trade_count == 1
+    assert buckets[("2026-03-10", "KRW")].trade_count == 1
+
+
+def test_period_same_currency_same_day_merged(aggregator):
+    """동일 날짜 KRW 2건 → 1개 버킷으로 병합."""
+    trades = [
+        _make_rt(
+            id=1,
+            ticker="005930",
+            currency="KRW",
+            executed_at="2026-03-10T10:00:00",
+            sell_price=80000.0,
+            avg_cost=60000.0,
+            qty=5.0,
+        ),
+        _make_rt(
+            id=2,
+            ticker="035720",
+            currency="KRW",
+            executed_at="2026-03-10T14:00:00",
+            sell_price=50000.0,
+            avg_cost=40000.0,
+            qty=3.0,
+        ),
+    ]
+    summary = aggregator.aggregate(trades, {}, "2026-03-01", "2026-03-31", group_by="day")
+
+    assert len(summary.by_period) == 1
+    bucket = summary.by_period[0]
+    assert bucket.period == "2026-03-10"
+    assert bucket.currency == "KRW"
+    assert bucket.trade_count == 2
+    assert bucket.realized_pnl == pytest.approx(100_000.0 + 30_000.0)
 
 
 # ---------------------------------------------------------------------------

@@ -59,25 +59,15 @@ export default function Performance() {
     staleTime: 60_000,
   })
 
-  // 통화별 실현손익 집계 (프론트에서 직접 분리)
+  // 통화별 실현손익 집계 (MetricCard용)
   const krPnl = data?.trades.filter(t => t.currency === 'KRW').reduce((s, t) => s + t.realized_pnl, 0) ?? 0
   const usPnl = data?.trades.filter(t => t.currency === 'USD').reduce((s, t) => s + t.realized_pnl, 0) ?? 0
   const hasKrTrades = (data?.trades ?? []).some(t => t.currency === 'KRW')
   const hasUsTrades = (data?.trades ?? []).some(t => t.currency === 'USD')
 
-  // 기간별 손익 차트: KRW / USD 분리 집계
-  const periodKrMap: Record<string, number> = {}
-  const periodUsMap: Record<string, number> = {}
-  for (const t of data?.trades ?? []) {
-    const key = groupBy === 'month'
-      ? t.executed_at.slice(0, 7)
-      : t.executed_at.slice(0, 10)
-    if (t.currency === 'KRW') periodKrMap[key] = (periodKrMap[key] ?? 0) + t.realized_pnl
-    else periodUsMap[key] = (periodUsMap[key] ?? 0) + t.realized_pnl
-  }
-
-  // by_period는 기존 집계(합산) 그대로 사용하되, KRW/USD 혼재 시에는 각각 분리 차트로
-  const periodData = data?.by_period ?? []
+  // 기간별 손익 차트: 서버에서 이미 통화별 분리된 by_period 사용
+  const periodKrData = (data?.by_period ?? []).filter(p => p.currency === 'KRW')
+  const periodUsData = (data?.by_period ?? []).filter(p => p.currency === 'USD')
 
   return (
     <Page>
@@ -155,45 +145,60 @@ export default function Performance() {
         />
       </MetricsRow>
 
-      {/* ── Period P&L Bar Chart ── */}
-      <Card>
-        <CardTitle>기간별 손익</CardTitle>
-        {periodData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={periodData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
-              <XAxis
-                dataKey="period"
-                tick={{ fill: colors.textMuted, fontSize: 11 }}
-                tickLine={false}
-                axisLine={{ stroke: colors.border }}
-              />
-              <YAxis
-                tick={{ fill: colors.textMuted, fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={v => v.toLocaleString()}
-              />
-              <Tooltip
-                contentStyle={{ background: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.md }}
-                labelStyle={{ color: colors.text }}
-                formatter={(value: number) => [value.toLocaleString(), 'Realized P&L']}
-              />
-              <Bar dataKey="realized_pnl" radius={[4, 4, 0, 0]}>
-                {(data?.by_period ?? []).map((entry, i) => (
-                  <Cell
-                    key={i}
-                    fill={entry.realized_pnl >= 0 ? colors.positive : colors.negative}
-                    fillOpacity={0.85}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
+      {/* ── Period P&L Bar Charts (KRW / USD) ── */}
+      {!hasKrTrades && !hasUsTrades ? (
+        <Card>
+          <CardTitle>기간별 손익</CardTitle>
           <EmptyMsg>데이터 없음</EmptyMsg>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <ChartsRow>
+          {periodKrData.length > 0 && (
+            <Card>
+              <CardTitle>기간별 손익 (KRW)</CardTitle>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={periodKrData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+                  <XAxis dataKey="period" tick={{ fill: colors.textMuted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: colors.border }} />
+                  <YAxis tick={{ fill: colors.textMuted, fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={v => v.toLocaleString()} />
+                  <Tooltip
+                    contentStyle={{ background: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.md }}
+                    labelStyle={{ color: colors.text }}
+                    formatter={(value: number) => [fmtCurrency(value, 'KRW'), 'Realized P&L']}
+                  />
+                  <Bar dataKey="realized_pnl" radius={[4, 4, 0, 0]}>
+                    {periodKrData.map((entry, i) => (
+                      <Cell key={i} fill={entry.realized_pnl >= 0 ? colors.positive : colors.negative} fillOpacity={0.85} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
+          {periodUsData.length > 0 && (
+            <Card>
+              <CardTitle>기간별 손익 (USD)</CardTitle>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={periodUsData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+                  <XAxis dataKey="period" tick={{ fill: colors.textMuted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: colors.border }} />
+                  <YAxis tick={{ fill: colors.textMuted, fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={v => v.toLocaleString()} />
+                  <Tooltip
+                    contentStyle={{ background: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.md }}
+                    labelStyle={{ color: colors.text }}
+                    formatter={(value: number) => [fmtCurrency(value, 'USD'), 'Realized P&L']}
+                  />
+                  <Bar dataKey="realized_pnl" radius={[4, 4, 0, 0]}>
+                    {periodUsData.map((entry, i) => (
+                      <Cell key={i} fill={entry.realized_pnl >= 0 ? colors.positive : colors.negative} fillOpacity={0.85} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
+        </ChartsRow>
+      )}
 
       {/* ── Bottom: Strategy Table + Trade History ── */}
       <BottomGrid>
@@ -423,6 +428,12 @@ const CardTitle = styled.h2`
   font-weight: 600;
   color: ${colors.text};
   margin: 0 0 ${spacing.md} 0;
+`
+
+const ChartsRow = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: ${spacing.md};
 `
 
 const BottomGrid = styled.div`

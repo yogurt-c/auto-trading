@@ -213,6 +213,7 @@ export interface RealizedTrade {
 
 export interface PeriodPnl {
   period: string
+  currency: Currency
   realized_pnl: number
   trade_count: number
 }

@@ -17,6 +17,7 @@ def _make_realized_trade(
     avg_cost: float = 100.0,
     strategy_id: int | None = None,
     executed_at: str = "2026-03-15T14:30:00",
+    currency: str = "USD",
 ) -> dict:
     pnl = (sell_price - avg_cost) * qty
     pnl_pct = round((pnl / (avg_cost * qty) * 100) if avg_cost else 0.0, 2)
@@ -29,6 +30,7 @@ def _make_realized_trade(
         "avg_cost": avg_cost,
         "realized_pnl": pnl,
         "realized_pnl_pct": pnl_pct,
+        "currency": currency,
         "strategy_id": strategy_id,
         "executed_at": executed_at,
     }
@@ -157,6 +159,7 @@ def test_performance_group_by_month(auth_client):
     data = resp.json()
     assert len(data["by_period"]) == 1
     assert data["by_period"][0]["period"] == "2026-03"
+    assert data["by_period"][0]["currency"] == "USD"
     assert data["by_period"][0]["trade_count"] == 2
 
 
@@ -176,3 +179,43 @@ def test_performance_with_strategy_names(auth_client):
     data = resp.json()
     assert data["trades"][0]["strategy_name"] == "My Strategy"
     assert data["by_strategy"][0]["strategy_name"] == "My Strategy"
+
+
+def test_performance_by_period_splits_currency(auth_client):
+    """동일 날짜 KRW + USD 거래 → by_period에 통화별 2개 row."""
+    trades = [
+        _make_realized_trade(
+            id=1,
+            ticker="AAPL",
+            currency="USD",
+            sell_price=150.0,
+            avg_cost=100.0,
+            qty=10.0,
+            executed_at="2026-03-10T10:00:00",
+        ),
+        _make_realized_trade(
+            id=2,
+            ticker="005930",
+            currency="KRW",
+            sell_price=80000.0,
+            avg_cost=60000.0,
+            qty=5.0,
+            executed_at="2026-03-10T11:00:00",
+        ),
+    ]
+    with (
+        patch("app.application.tools.db.get_realized_trades", return_value=trades),
+        patch("app.application.tools.db.get_strategies", return_value=[]),
+    ):
+        resp = auth_client.get(
+            "/api/portfolio/performance",
+            params={"start_date": "2026-03-01", "end_date": "2026-03-31", "group_by": "day"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["by_period"]) == 2
+    buckets = {(p["period"], p["currency"]): p for p in data["by_period"]}
+    assert ("2026-03-10", "USD") in buckets
+    assert ("2026-03-10", "KRW") in buckets
+    assert buckets[("2026-03-10", "USD")]["realized_pnl"] == pytest.approx(500.0)
+    assert buckets[("2026-03-10", "KRW")]["realized_pnl"] == pytest.approx(100_000.0)

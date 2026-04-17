@@ -272,7 +272,7 @@ def add_realized_trade(
     avg_cost: float,
     realized_pnl: float,
     realized_pnl_pct: float,
-    currency: str = "USD",
+    currency: str,
     strategy_id: int | None = None,
 ) -> dict:
     with get_session() as s:

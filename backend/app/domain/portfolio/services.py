@@ -125,22 +125,23 @@ class RealizedPnlAggregator:
         win_rate = round((win_count / total_trade_count * 100) if total_trade_count else 0.0, 2)
 
         # --- by_period ---
-        period_buckets: dict[str, list[RealizedTradeVO]] = {}
+        period_buckets: dict[tuple[str, str], list[RealizedTradeVO]] = {}
         for t in trades:
-            key = (
+            period_str = (
                 t.executed_at.strftime("%Y-%m")
                 if group_by == "month"
                 else t.executed_at.strftime("%Y-%m-%d")
             )
-            period_buckets.setdefault(key, []).append(t)
+            period_buckets.setdefault((period_str, t.currency), []).append(t)
 
         by_period = [
             PeriodPnl(
                 period=period,
+                currency=currency,
                 realized_pnl=sum(t.realized_pnl for t in bucket),
                 trade_count=len(bucket),
             )
-            for period, bucket in sorted(period_buckets.items())
+            for (period, currency), bucket in sorted(period_buckets.items())
         ]
 
         # --- by_strategy ---

@@ -87,6 +87,7 @@ class PeriodPnl(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     period: str  # 'YYYY-MM-DD' (day) or 'YYYY-MM' (month)
+    currency: str  # 'KRW' | 'USD'
     realized_pnl: float
     trade_count: int
 
