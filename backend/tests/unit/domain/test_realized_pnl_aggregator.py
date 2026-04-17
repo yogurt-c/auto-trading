@@ -44,34 +44,37 @@ def _make_rt(
 
 def test_single_profit(aggregator):
     """단일 매도 양수 수익 집계."""
-    rt = _make_rt(sell_price=150.0, avg_cost=100.0, qty=10.0)
+    rt = _make_rt(sell_price=150.0, avg_cost=100.0, qty=10.0, currency="USD")
     summary = aggregator.aggregate([rt], {}, "2026-03-01", "2026-03-31")
 
-    assert summary.total_realized_pnl == pytest.approx(500.0)
-    assert summary.total_trade_count == 1
-    assert summary.win_count == 1
-    assert summary.win_rate == pytest.approx(100.0)
+    assert len(summary.by_currency) == 1
+    usd = summary.by_currency[0]
+    assert usd.currency == "USD"
+    assert usd.total_realized_pnl == pytest.approx(500.0)
+    assert usd.total_trade_count == 1
+    assert usd.win_count == 1
+    assert usd.win_rate == pytest.approx(100.0)
 
 
 def test_single_loss(aggregator):
     """단일 매도 손실 집계."""
-    rt = _make_rt(sell_price=80.0, avg_cost=100.0, qty=10.0)
+    rt = _make_rt(sell_price=80.0, avg_cost=100.0, qty=10.0, currency="USD")
     summary = aggregator.aggregate([rt], {}, "2026-03-01", "2026-03-31")
 
-    assert summary.total_realized_pnl == pytest.approx(-200.0)
-    assert summary.total_trade_count == 1
-    assert summary.win_count == 0
-    assert summary.win_rate == pytest.approx(0.0)
+    assert len(summary.by_currency) == 1
+    usd = summary.by_currency[0]
+    assert usd.currency == "USD"
+    assert usd.total_realized_pnl == pytest.approx(-200.0)
+    assert usd.total_trade_count == 1
+    assert usd.win_count == 0
+    assert usd.win_rate == pytest.approx(0.0)
 
 
 def test_empty_input(aggregator):
     """빈 입력 처리."""
     summary = aggregator.aggregate([], {}, "2026-03-01", "2026-03-31")
 
-    assert summary.total_realized_pnl == pytest.approx(0.0)
-    assert summary.total_trade_count == 0
-    assert summary.win_count == 0
-    assert summary.win_rate == pytest.approx(0.0)
+    assert summary.by_currency == []
     assert summary.trades == []
     assert summary.by_period == []
     assert summary.by_strategy == []
@@ -283,7 +286,7 @@ def test_strategy_grouping_manual_trades(aggregator):
 
 
 def test_overall_win_rate(aggregator):
-    """전체 승률 계산."""
+    """통화별 승률 계산."""
     trades = [
         _make_rt(
             id=1, sell_price=120.0, avg_cost=100.0, qty=5.0, executed_at="2026-03-10T10:00:00"
@@ -296,9 +299,46 @@ def test_overall_win_rate(aggregator):
     ]
     summary = aggregator.aggregate(trades, {}, "2026-03-01", "2026-03-31")
 
-    assert summary.win_count == 2
-    assert summary.total_trade_count == 4
-    assert summary.win_rate == pytest.approx(50.0)
+    assert len(summary.by_currency) == 1
+    usd = summary.by_currency[0]
+    assert usd.win_count == 2
+    assert usd.total_trade_count == 4
+    assert usd.win_rate == pytest.approx(50.0)
+
+
+def test_strategy_splits_by_currency(aggregator):
+    """같은 전략이 KRW/USD 종목 모두 거래하면 통화별로 별도 행."""
+    strategy_names = {1: "Mixed Strategy"}
+    trades = [
+        _make_rt(id=1, sell_price=150.0, avg_cost=100.0, qty=10.0, strategy_id=1, currency="USD"),
+        _make_rt(id=2, ticker="005930", sell_price=80000.0, avg_cost=60000.0, qty=5.0, strategy_id=1, currency="KRW"),
+    ]
+    summary = aggregator.aggregate(trades, strategy_names, "2026-03-01", "2026-03-31")
+
+    assert len(summary.by_strategy) == 2
+    rows = {s.currency: s for s in summary.by_strategy}
+    assert "USD" in rows
+    assert "KRW" in rows
+    assert rows["USD"].realized_pnl == pytest.approx(500.0)
+    assert rows["KRW"].realized_pnl == pytest.approx(100_000.0)
+    assert rows["USD"].strategy_name == "Mixed Strategy"
+    assert rows["KRW"].strategy_name == "Mixed Strategy"
+
+
+def test_by_currency_summary_splits_krw_usd(aggregator):
+    """KRW/USD 혼재 시 by_currency에 통화별 집계가 분리됨."""
+    trades = [
+        _make_rt(id=1, sell_price=150.0, avg_cost=100.0, qty=10.0, currency="USD"),
+        _make_rt(id=2, ticker="005930", sell_price=80000.0, avg_cost=70000.0, qty=5.0, currency="KRW"),
+    ]
+    summary = aggregator.aggregate(trades, {}, "2026-03-01", "2026-03-31")
+
+    assert len(summary.by_currency) == 2
+    c_map = {c.currency: c for c in summary.by_currency}
+    assert c_map["USD"].total_realized_pnl == pytest.approx(500.0)
+    assert c_map["KRW"].total_realized_pnl == pytest.approx(50_000.0)
+    assert c_map["USD"].total_trade_count == 1
+    assert c_map["KRW"].total_trade_count == 1
 
 
 def test_strategy_sorted_by_pnl_desc(aggregator):

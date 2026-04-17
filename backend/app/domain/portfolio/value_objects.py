@@ -92,13 +92,26 @@ class PeriodPnl(BaseModel):
     trade_count: int
 
 
+class CurrencySummary(BaseModel):
+    """Summary statistics for a single currency (KRW or USD)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    currency: str  # 'KRW' | 'USD'
+    total_realized_pnl: float
+    total_trade_count: int
+    win_count: int
+    win_rate: float
+
+
 class StrategyPnl(BaseModel):
-    """Aggregated P&L per strategy."""
+    """Aggregated P&L per strategy per currency."""
 
     model_config = ConfigDict(frozen=True)
 
     strategy_id: int | None
     strategy_name: str
+    currency: str  # 'KRW' | 'USD'
     realized_pnl: float
     trade_count: int
     win_count: int
@@ -112,10 +125,7 @@ class PerformanceSummary(BaseModel):
 
     period_start: str
     period_end: str
-    total_realized_pnl: float
-    total_trade_count: int
-    win_count: int
-    win_rate: float
+    by_currency: list[CurrencySummary]
     trades: list[RealizedTradeVO]
     by_period: list[PeriodPnl]
     by_strategy: list[StrategyPnl]

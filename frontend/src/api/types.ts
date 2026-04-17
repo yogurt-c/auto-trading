@@ -218,9 +218,18 @@ export interface PeriodPnl {
   trade_count: number
 }
 
+export interface CurrencySummary {
+  currency: Currency
+  total_realized_pnl: number
+  total_trade_count: number
+  win_count: number
+  win_rate: number
+}
+
 export interface StrategyPnl {
   strategy_id: number | null
   strategy_name: string
+  currency: Currency
   realized_pnl: number
   trade_count: number
   win_count: number
@@ -230,10 +239,7 @@ export interface StrategyPnl {
 export interface PerformanceSummary {
   period_start: string
   period_end: string
-  total_realized_pnl: number
-  total_trade_count: number
-  win_count: number
-  win_rate: number
+  by_currency: CurrencySummary[]
   trades: RealizedTrade[]
   by_period: PeriodPnl[]
   by_strategy: StrategyPnl[]

@@ -345,10 +345,7 @@ def get_performance(start_date: str, end_date: str, group_by: str = "day") -> di
     return {
         "period_start": summary.period_start,
         "period_end": summary.period_end,
-        "total_realized_pnl": summary.total_realized_pnl,
-        "total_trade_count": summary.total_trade_count,
-        "win_count": summary.win_count,
-        "win_rate": summary.win_rate,
+        "by_currency": [c.model_dump() for c in summary.by_currency],
         "trades": [t.model_dump() for t in summary.trades],
         "by_period": [p.model_dump() for p in summary.by_period],
         "by_strategy": [s.model_dump() for s in summary.by_strategy],

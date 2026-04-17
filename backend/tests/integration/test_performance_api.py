@@ -42,7 +42,7 @@ def _make_realized_trade(
 
 
 def test_performance_empty_data(auth_client):
-    """realized_trades 없을 때 → 0값 응답."""
+    """realized_trades 없을 때 → by_currency 빈 리스트 응답."""
     with (
         patch("app.application.tools.db.get_realized_trades", return_value=[]),
         patch("app.application.tools.db.get_strategies", return_value=[]),
@@ -53,18 +53,15 @@ def test_performance_empty_data(auth_client):
         )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_realized_pnl"] == pytest.approx(0.0)
-    assert data["total_trade_count"] == 0
-    assert data["win_count"] == 0
-    assert data["win_rate"] == pytest.approx(0.0)
+    assert data["by_currency"] == []
     assert data["trades"] == []
     assert data["by_period"] == []
     assert data["by_strategy"] == []
 
 
 def test_performance_with_data(auth_client):
-    """정상 데이터 → 집계 결과 반환."""
-    rt = _make_realized_trade(sell_price=150.0, avg_cost=100.0, qty=10.0)
+    """정상 데이터 → by_currency에 USD 집계 반환."""
+    rt = _make_realized_trade(sell_price=150.0, avg_cost=100.0, qty=10.0, currency="USD")
     with (
         patch("app.application.tools.db.get_realized_trades", return_value=[rt]),
         patch("app.application.tools.db.get_strategies", return_value=[]),
@@ -75,10 +72,13 @@ def test_performance_with_data(auth_client):
         )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_realized_pnl"] == pytest.approx(500.0)
-    assert data["total_trade_count"] == 1
-    assert data["win_count"] == 1
-    assert data["win_rate"] == pytest.approx(100.0)
+    assert len(data["by_currency"]) == 1
+    usd = data["by_currency"][0]
+    assert usd["currency"] == "USD"
+    assert usd["total_realized_pnl"] == pytest.approx(500.0)
+    assert usd["total_trade_count"] == 1
+    assert usd["win_count"] == 1
+    assert usd["win_rate"] == pytest.approx(100.0)
     assert len(data["trades"]) == 1
     assert data["trades"][0]["ticker"] == "AAPL"
 
@@ -95,17 +95,7 @@ def test_performance_response_structure(auth_client):
         )
     assert resp.status_code == 200
     data = resp.json()
-    required_keys = {
-        "period_start",
-        "period_end",
-        "total_realized_pnl",
-        "total_trade_count",
-        "win_count",
-        "win_rate",
-        "trades",
-        "by_period",
-        "by_strategy",
-    }
+    required_keys = {"period_start", "period_end", "by_currency", "trades", "by_period", "by_strategy"}
     assert required_keys <= data.keys()
 
 
@@ -179,6 +169,30 @@ def test_performance_with_strategy_names(auth_client):
     data = resp.json()
     assert data["trades"][0]["strategy_name"] == "My Strategy"
     assert data["by_strategy"][0]["strategy_name"] == "My Strategy"
+
+
+def test_performance_by_strategy_splits_currency(auth_client):
+    """같은 전략이 KRW/USD 거래 → by_strategy에 통화별 2개 row."""
+    trades = [
+        _make_realized_trade(id=1, ticker="AAPL", currency="USD", sell_price=150.0, avg_cost=100.0, qty=10.0, strategy_id=1),
+        _make_realized_trade(id=2, ticker="005930", currency="KRW", sell_price=80000.0, avg_cost=60000.0, qty=5.0, strategy_id=1),
+    ]
+    strategies = [{"id": 1, "name": "Mixed"}]
+    with (
+        patch("app.application.tools.db.get_realized_trades", return_value=trades),
+        patch("app.application.tools.db.get_strategies", return_value=strategies),
+    ):
+        resp = auth_client.get(
+            "/api/portfolio/performance",
+            params={"start_date": "2026-03-01", "end_date": "2026-03-31"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["by_strategy"]) == 2
+    rows = {s["currency"]: s for s in data["by_strategy"]}
+    assert "USD" in rows and "KRW" in rows
+    assert rows["USD"]["realized_pnl"] == pytest.approx(500.0)
+    assert rows["KRW"]["realized_pnl"] == pytest.approx(100_000.0)
 
 
 def test_performance_by_period_splits_currency(auth_client):

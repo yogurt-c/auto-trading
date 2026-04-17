@@ -59,13 +59,8 @@ export default function Performance() {
     staleTime: 60_000,
   })
 
-  // 통화별 실현손익 집계 (MetricCard용)
-  const krPnl = data?.trades.filter(t => t.currency === 'KRW').reduce((s, t) => s + t.realized_pnl, 0) ?? 0
-  const usPnl = data?.trades.filter(t => t.currency === 'USD').reduce((s, t) => s + t.realized_pnl, 0) ?? 0
-  const hasKrTrades = (data?.trades ?? []).some(t => t.currency === 'KRW')
-  const hasUsTrades = (data?.trades ?? []).some(t => t.currency === 'USD')
-
-  // 기간별 손익 차트: 서버에서 이미 통화별 분리된 by_period 사용
+  const krSummary = data?.by_currency.find(c => c.currency === 'KRW')
+  const usSummary = data?.by_currency.find(c => c.currency === 'USD')
   const periodKrData = (data?.by_period ?? []).filter(p => p.currency === 'KRW')
   const periodUsData = (data?.by_period ?? []).filter(p => p.currency === 'USD')
 
@@ -113,47 +108,39 @@ export default function Performance() {
       {!enabled && <ErrorMsg>start_date는 end_date보다 이전이어야 합니다.</ErrorMsg>}
 
       {/* ── Summary Metrics ── */}
+      <SectionLabel>국내 (KRW)</SectionLabel>
       <MetricsRow>
-        {data && hasKrTrades && (
-          <MetricCard
-            title="Realized P&L (KRW)"
-            value={fmtCurrency(krPnl, 'KRW', krPnl >= 0)}
-            subtitle={krPnl >= 0 ? '수익' : '손실'}
-          />
-        )}
-        {data && hasUsTrades && (
-          <MetricCard
-            title="Realized P&L (USD)"
-            value={fmtCurrency(usPnl, 'USD', usPnl >= 0)}
-            subtitle={usPnl >= 0 ? '수익' : '손실'}
-          />
-        )}
-        {data && !hasKrTrades && !hasUsTrades && (
-          <MetricCard title="Realized P&L" value="—" />
-        )}
         <MetricCard
-          title="거래 수"
-          value={data ? String(data.total_trade_count) : '—'}
+          title="Realized P&L (KRW)"
+          value={krSummary ? fmtCurrency(krSummary.total_realized_pnl, 'KRW', krSummary.total_realized_pnl >= 0) : '—'}
+          subtitle={krSummary ? (krSummary.total_realized_pnl >= 0 ? '수익' : '손실') : undefined}
         />
-        <MetricCard
-          title="승률"
-          value={data ? `${fmt(data.win_rate, 1)}%` : '—'}
-        />
+        <MetricCard title="거래 수" value={krSummary ? String(krSummary.total_trade_count) : '—'} />
+        <MetricCard title="승률" value={krSummary ? `${fmt(krSummary.win_rate, 1)}%` : '—'} />
         <MetricCard
           title="이익 / 전체"
-          value={data ? `${data.win_count} / ${data.total_trade_count}` : '—'}
+          value={krSummary ? `${krSummary.win_count} / ${krSummary.total_trade_count}` : '—'}
+        />
+      </MetricsRow>
+
+      <SectionLabel>해외 (USD)</SectionLabel>
+      <MetricsRow>
+        <MetricCard
+          title="Realized P&L (USD)"
+          value={usSummary ? fmtCurrency(usSummary.total_realized_pnl, 'USD', usSummary.total_realized_pnl >= 0) : '—'}
+          subtitle={usSummary ? (usSummary.total_realized_pnl >= 0 ? '수익' : '손실') : undefined}
+        />
+        <MetricCard title="거래 수" value={usSummary ? String(usSummary.total_trade_count) : '—'} />
+        <MetricCard title="승률" value={usSummary ? `${fmt(usSummary.win_rate, 1)}%` : '—'} />
+        <MetricCard
+          title="이익 / 전체"
+          value={usSummary ? `${usSummary.win_count} / ${usSummary.total_trade_count}` : '—'}
         />
       </MetricsRow>
 
       {/* ── Period P&L Bar Charts (KRW / USD) ── */}
-      {!hasKrTrades && !hasUsTrades ? (
-        <Card>
-          <CardTitle>기간별 손익</CardTitle>
-          <EmptyMsg>데이터 없음</EmptyMsg>
-        </Card>
-      ) : (
-        <ChartsRow>
-          {periodKrData.length > 0 && (
+      <ChartsRow>
+          {periodKrData.length > 0 ? (
             <Card>
               <CardTitle>기간별 손익 (KRW)</CardTitle>
               <ResponsiveContainer width="100%" height={220}>
@@ -174,8 +161,13 @@ export default function Performance() {
                 </BarChart>
               </ResponsiveContainer>
             </Card>
+          ) : (
+            <Card>
+              <CardTitle>기간별 손익 (KRW)</CardTitle>
+              <EmptyMsg>데이터 없음</EmptyMsg>
+            </Card>
           )}
-          {periodUsData.length > 0 && (
+          {periodUsData.length > 0 ? (
             <Card>
               <CardTitle>기간별 손익 (USD)</CardTitle>
               <ResponsiveContainer width="100%" height={220}>
@@ -196,9 +188,13 @@ export default function Performance() {
                 </BarChart>
               </ResponsiveContainer>
             </Card>
+          ) : (
+            <Card>
+              <CardTitle>기간별 손익 (USD)</CardTitle>
+              <EmptyMsg>데이터 없음</EmptyMsg>
+            </Card>
           )}
         </ChartsRow>
-      )}
 
       {/* ── Bottom: Strategy Table + Trade History ── */}
       <BottomGrid>
@@ -210,6 +206,7 @@ export default function Performance() {
               <thead>
                 <tr>
                   <Th>전략</Th>
+                  <Th>통화</Th>
                   <Th align="right">Realized P&L</Th>
                   <Th align="right">거래 수</Th>
                   <Th align="right">승률</Th>
@@ -219,8 +216,9 @@ export default function Performance() {
                 {data.by_strategy.map((s, i) => (
                   <tr key={i}>
                     <Td>{s.strategy_name}</Td>
+                    <Td><CurrencyBadge krw={s.currency === 'KRW'}>{s.currency}</CurrencyBadge></Td>
                     <Td align="right" positive={s.realized_pnl >= 0}>
-                      {s.realized_pnl >= 0 ? '+' : ''}{Math.abs(s.realized_pnl).toLocaleString()}
+                      {fmtCurrency(s.realized_pnl, s.currency, s.realized_pnl >= 0)}
                     </Td>
                     <Td align="right">{s.trade_count}</Td>
                     <Td align="right" positive={s.win_rate >= 50}>
@@ -409,6 +407,15 @@ const ErrorMsg = styled.div`
   border: 1px solid ${colors.negative}44;
 `
 
+const SectionLabel = styled.h2`
+  font-size: ${fontSize.sm};
+  font-weight: 600;
+  color: ${colors.textMuted};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+`
+
 const MetricsRow = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -475,6 +482,15 @@ const Td = styled.td<{ align?: string; positive?: boolean }>`
 const TickerBadge = styled.span`
   background: ${colors.primary}22;
   color: ${colors.primary};
+  border-radius: ${radius.sm};
+  padding: 2px 7px;
+  font-size: ${fontSize.xs};
+  font-weight: 600;
+`
+
+const CurrencyBadge = styled.span<{ krw?: boolean }>`
+  background: ${({ krw }) => krw ? '#3b82f622' : '#8b5cf622'};
+  color: ${({ krw }) => krw ? '#3b82f6' : '#8b5cf6'};
   border-radius: ${radius.sm};
   padding: 2px 7px;
   font-size: ${fontSize.xs};

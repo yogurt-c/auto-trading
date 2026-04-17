@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .value_objects import (
+    CurrencySummary,
     HoldingValuation,
     MarketSummary,
     Money,
@@ -119,10 +120,24 @@ class RealizedPnlAggregator:
             for rt in realized_trade_dicts
         ]
 
-        win_count = sum(1 for t in trades if t.realized_pnl > 0)
-        total_trade_count = len(trades)
-        total_realized_pnl = sum(t.realized_pnl for t in trades)
-        win_rate = round((win_count / total_trade_count * 100) if total_trade_count else 0.0, 2)
+        # --- by_currency (summary) ---
+        currency_buckets: dict[str, list[RealizedTradeVO]] = {}
+        for t in trades:
+            currency_buckets.setdefault(t.currency, []).append(t)
+
+        by_currency = []
+        for currency, bucket in sorted(currency_buckets.items()):
+            c_win = sum(1 for t in bucket if t.realized_pnl > 0)
+            c_count = len(bucket)
+            by_currency.append(
+                CurrencySummary(
+                    currency=currency,
+                    total_realized_pnl=sum(t.realized_pnl for t in bucket),
+                    total_trade_count=c_count,
+                    win_count=c_win,
+                    win_rate=round((c_win / c_count * 100) if c_count else 0.0, 2),
+                )
+            )
 
         # --- by_period ---
         period_buckets: dict[tuple[str, str], list[RealizedTradeVO]] = {}
@@ -144,13 +159,13 @@ class RealizedPnlAggregator:
             for (period, currency), bucket in sorted(period_buckets.items())
         ]
 
-        # --- by_strategy ---
-        strategy_buckets: dict[int | None, list[RealizedTradeVO]] = {}
+        # --- by_strategy: (strategy_id, currency) 복합 키 ---
+        strategy_buckets: dict[tuple[int | None, str], list[RealizedTradeVO]] = {}
         for t in trades:
-            strategy_buckets.setdefault(t.strategy_id, []).append(t)
+            strategy_buckets.setdefault((t.strategy_id, t.currency), []).append(t)
 
         by_strategy = []
-        for sid, bucket in strategy_buckets.items():
+        for (sid, currency), bucket in strategy_buckets.items():
             s_win = sum(1 for t in bucket if t.realized_pnl > 0)
             s_count = len(bucket)
             name = strategy_names.get(sid, "Manual") if sid is not None else "Manual"
@@ -158,6 +173,7 @@ class RealizedPnlAggregator:
                 StrategyPnl(
                     strategy_id=sid,
                     strategy_name=name,
+                    currency=currency,
                     realized_pnl=sum(t.realized_pnl for t in bucket),
                     trade_count=s_count,
                     win_count=s_win,
@@ -169,10 +185,7 @@ class RealizedPnlAggregator:
         return PerformanceSummary(
             period_start=start_date,
             period_end=end_date,
-            total_realized_pnl=total_realized_pnl,
-            total_trade_count=total_trade_count,
-            win_count=win_count,
-            win_rate=win_rate,
+            by_currency=by_currency,
             trades=trades,
             by_period=by_period,
             by_strategy=by_strategy,
