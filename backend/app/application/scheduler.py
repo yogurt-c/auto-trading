@@ -39,11 +39,25 @@ def _is_market_open() -> bool:
 
 _scheduler: BackgroundScheduler | None = None
 _lock = threading.Lock()
+# APScheduler의 max_instances=1은 스케줄 잡끼리만 직렬화한다.
+# trigger_now()가 생성하는 raw 스레드는 이를 우회하므로 별도 Lock으로 전체 직렬화.
+_job_lock = threading.Lock()
 
 DEFAULT_INTERVAL_MINUTES = 30
 
 
 def _job() -> None:
+    if not _job_lock.acquire(blocking=False):
+        logger.info("scheduler job already running — skipping overlapping trigger")
+        return
+    try:
+        _job_body()
+    finally:
+        _job_lock.release()
+
+
+def _job_body() -> None:
+    """실제 스케줄러 작업 본문. _job()에 의해 단일 스레드에서 실행된다."""
     from app.infrastructure.repository import (
         add_scheduler_run,
         get_strategies,
@@ -52,7 +66,6 @@ def _job() -> None:
     )
 
     from .agent import run_trade_executor
-
     logger.debug("scheduler job fired")
 
     # 장 외 시간에는 그냥 종료

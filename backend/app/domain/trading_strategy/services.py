@@ -42,20 +42,22 @@ class StrategyValidator:
         """
         warnings: list[ValidationWarning] = []
 
-        if entry_price_drop_pct is not None and entry_price_drop_pct > 0:
+        if entry_price_drop_pct is not None and entry_price_drop_pct >= 0:
             warnings.append(
                 ValidationWarning(
                     message=(
-                        f"entry_price_drop_pct={entry_price_drop_pct}이 양수입니다. "
+                        f"entry_price_drop_pct={entry_price_drop_pct}이 0 이상입니다. "
                         "하락 진입 조건은 음수여야 합니다 (예: -5.0)."
-                    )
+                    ),
+                    severity=ValidationSeverity.ERROR,
                 )
             )
 
         if entry_rsi_below is not None and not (0 < entry_rsi_below < 100):
             warnings.append(
                 ValidationWarning(
-                    message=(f"entry_rsi_below={entry_rsi_below}이 유효 범위(0~100)를 벗어납니다.")
+                    message=(f"entry_rsi_below={entry_rsi_below}이 유효 범위(0~100)를 벗어납니다."),
+                    severity=ValidationSeverity.ERROR,
                 )
             )
 
@@ -133,13 +135,14 @@ class StrategyValidator:
                 )
             )
 
-        if entry_disparity_below is not None and entry_disparity_below > 0:
+        if entry_disparity_below is not None and entry_disparity_below >= 0:
             warnings.append(
                 ValidationWarning(
                     message=(
-                        f"entry_disparity_below={entry_disparity_below}이 양수입니다. "
+                        f"entry_disparity_below={entry_disparity_below}이 0 이상입니다. "
                         "이격도 과매도 조건은 음수여야 합니다 (예: -5.0)."
-                    )
+                    ),
+                    severity=ValidationSeverity.ERROR,
                 )
             )
 
@@ -149,7 +152,8 @@ class StrategyValidator:
                     message=(
                         f"entry_volume_surge={entry_volume_surge}이 1.0 이하입니다. "
                         "거래량 급등 조건은 1.0 초과여야 합니다 (예: 2.0 = 평균의 2배)."
-                    )
+                    ),
+                    severity=ValidationSeverity.ERROR,
                 )
             )
 

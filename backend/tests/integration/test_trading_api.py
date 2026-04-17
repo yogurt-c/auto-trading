@@ -224,15 +224,43 @@ def test_sync_pending_orders_skips_still_partial(db_partially_filled_log):
 
 
 def test_get_partially_filled_logs(db_partially_filled_log):
-    """get_partially_filled_logs → partially_filled + alpaca_id 있는 레코드만 반환."""
+    """get_pending_fill_logs → partially_filled 레코드 포함, broker_order_id 있음."""
     from app.infrastructure import repository as db
 
-    logs = db.get_partially_filled_logs()
+    logs = db.get_pending_fill_logs()
     ids = [lg["id"] for lg in logs]
     assert db_partially_filled_log["id"] in ids
     for lg in logs:
-        assert lg["status"] == "partially_filled"
+        assert lg["status"] in ("partially_filled", "accepted")
         assert lg["broker_order_id"] is not None
+
+
+def test_get_pending_fill_logs_includes_accepted():
+    """get_pending_fill_logs → accepted 상태 주문도 반환한다 (BUG-01 수정 검증)."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import TradeLog as TradeLogModel
+
+    log = db.add_trade_log(
+        ticker="ACCEPTED_TEST",
+        side="buy",
+        qty=2.0,
+        order_type="market",
+        status="accepted",
+        broker_order_id="accepted-order-uuid-001",
+    )
+    try:
+        logs = db.get_pending_fill_logs()
+        ids = [lg["id"] for lg in logs]
+        assert log["id"] in ids, "accepted 주문이 get_pending_fill_logs에 포함되어야 한다"
+        our = next(lg for lg in logs if lg["id"] == log["id"])
+        assert our["status"] == "accepted"
+        assert our["broker_order_id"] == "accepted-order-uuid-001"
+    finally:
+        with get_session() as s:
+            s.execute(sa_delete(TradeLogModel).where(TradeLogModel.id == log["id"]))
 
 
 def test_update_trade_log_status(db_partially_filled_log):
@@ -435,3 +463,271 @@ def test_place_order_filled_price_zero_no_realized_trade(auth_client):
             s.execute(sa_delete(RealizedTradeModel).where(RealizedTradeModel.ticker == "ZPTEST"))
             s.execute(sa_delete(TradeLogModel).where(TradeLogModel.ticker == "ZPTEST"))
         db.remove_holding("ZPTEST")
+
+
+# ---------------------------------------------------------------------------
+# BUG-01: accepted 주문 sync (get_pending_fill_logs 확장)
+# ---------------------------------------------------------------------------
+
+
+def test_sync_pending_orders_picks_up_accepted_status():
+    """sync_pending_orders → accepted 상태 주문도 KIS에서 재조회해 filled로 갱신."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.application.tools import sync_pending_orders
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import TradeLog as TradeLogModel
+
+    log = db.add_trade_log(
+        ticker="ACCEPTSYNC",
+        side="buy",
+        qty=3.0,
+        order_type="market",
+        status="accepted",
+        broker_order_id="accepted-sync-uuid-001",
+    )
+    try:
+        with patch(
+            "app.application.tools.kis_client.get_order",
+            return_value={
+                "broker_order_id": "accepted-sync-uuid-001",
+                "status": "filled",
+                "filled_avg_price": 55000.0,
+            },
+        ):
+            updated = sync_pending_orders()
+
+        assert updated >= 1
+        logs = db.get_trade_logs(limit=100, offset=0)
+        synced = next((lg for lg in logs if lg["id"] == log["id"]), None)
+        assert synced is not None
+        assert synced["status"] == "filled"
+        assert synced["filled_price"] == pytest.approx(55000.0)
+    finally:
+        with get_session() as s:
+            s.execute(sa_delete(TradeLogModel).where(TradeLogModel.id == log["id"]))
+
+
+# ---------------------------------------------------------------------------
+# BUG-02: sell_ratio 코드 레벨 적용
+# ---------------------------------------------------------------------------
+
+
+def test_sell_ratio_caps_qty_on_strategy_sell(auth_client):
+    """sell_ratio=0.5인 전략의 매도: qty가 보유 수량의 50%로 제한된다."""
+    from sqlalchemy import delete as sa_delete
+    from unittest.mock import patch
+
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import RealizedTrade as RealizedTradeModel
+    from app.infrastructure.models import Strategy as StrategyModel
+    from app.infrastructure.models import TradeLog as TradeLogModel
+
+    # 전략 생성 (sell_ratio=0.5)
+    strat = db.save_strategy(
+        name="SellRatioTest",
+        strategy_type="value",
+        ticker="SRTEST",
+        market="US",
+        entry_rsi_below=30.0,
+        sell_ratio=0.5,
+    )
+    # 보유 종목 설정 (10주 보유)
+    db.upsert_holding("SRTEST", 10.0, 100.0)
+
+    captured_qty = []
+
+    def _fake_place_order(ticker, side, qty, **kwargs):
+        captured_qty.append(qty)
+        return {
+            "broker_order_id": "sell-ratio-test-uuid",
+            "ticker": ticker,
+            "side": side,
+            "qty": qty,
+            "order_type": "market",
+            "status": "filled",
+            "limit_price": None,
+            "filled_avg_price": 110.0,
+            "market": "US",
+            "currency": "USD",
+        }
+
+    try:
+        with (
+            patch("app.application.tools.kis_client.place_order", side_effect=_fake_place_order),
+            patch("app.application.tools.kis_client.sync_positions", return_value=[]),
+            patch("app.application.tools.is_nyse_open", return_value=True),
+        ):
+            resp = auth_client.post(
+                "/api/trading/orders",
+                json={
+                    "ticker": "SRTEST",
+                    "side": "sell",
+                    "qty": 10.0,  # 전량 매도 시도
+                    "strategy_id": strat["id"],
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        # sell_ratio=0.5이므로 실제 주문 qty는 10 * 0.5 = 5
+        assert len(captured_qty) == 1
+        assert captured_qty[0] == pytest.approx(5.0)
+    finally:
+        with get_session() as s:
+            s.execute(sa_delete(RealizedTradeModel).where(RealizedTradeModel.ticker == "SRTEST"))
+            s.execute(sa_delete(TradeLogModel).where(TradeLogModel.ticker == "SRTEST"))
+            s.execute(sa_delete(StrategyModel).where(StrategyModel.id == strat["id"]))
+        db.remove_holding("SRTEST")
+
+
+def test_sell_ratio_one_does_not_cap_qty(auth_client):
+    """sell_ratio=1.0(전량 매도): qty가 변경되지 않는다."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.infrastructure import repository as db
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import RealizedTrade as RealizedTradeModel
+    from app.infrastructure.models import Strategy as StrategyModel
+    from app.infrastructure.models import TradeLog as TradeLogModel
+
+    strat = db.save_strategy(
+        name="SellRatioFullTest",
+        strategy_type="value",
+        ticker="SRFULL",
+        market="US",
+        entry_rsi_below=30.0,
+        sell_ratio=1.0,
+    )
+    db.upsert_holding("SRFULL", 10.0, 100.0)
+
+    captured_qty = []
+
+    def _fake_place_order(ticker, side, qty, **kwargs):
+        captured_qty.append(qty)
+        return {
+            "broker_order_id": "sell-full-test-uuid",
+            "ticker": ticker,
+            "side": side,
+            "qty": qty,
+            "order_type": "market",
+            "status": "filled",
+            "limit_price": None,
+            "filled_avg_price": 105.0,
+            "market": "US",
+            "currency": "USD",
+        }
+
+    try:
+        with (
+            patch("app.application.tools.kis_client.place_order", side_effect=_fake_place_order),
+            patch("app.application.tools.kis_client.sync_positions", return_value=[]),
+            patch("app.application.tools.is_nyse_open", return_value=True),
+        ):
+            resp = auth_client.post(
+                "/api/trading/orders",
+                json={
+                    "ticker": "SRFULL",
+                    "side": "sell",
+                    "qty": 10.0,
+                    "strategy_id": strat["id"],
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        # sell_ratio=1.0이므로 qty 변경 없음
+        assert captured_qty[0] == pytest.approx(10.0)
+    finally:
+        with get_session() as s:
+            s.execute(sa_delete(RealizedTradeModel).where(RealizedTradeModel.ticker == "SRFULL"))
+            s.execute(sa_delete(TradeLogModel).where(TradeLogModel.ticker == "SRFULL"))
+            s.execute(sa_delete(StrategyModel).where(StrategyModel.id == strat["id"]))
+        db.remove_holding("SRFULL")
+
+
+# ---------------------------------------------------------------------------
+# BUG-03: max_position=None 기본 한도 가드
+# ---------------------------------------------------------------------------
+
+
+def test_buy_without_max_position_uses_default_cap(auth_client):
+    """max_position 미설정 시 USD 기본 한도($5,000) 초과 주문이 차단된다."""
+    with (
+        patch("app.application.tools.is_nyse_open", return_value=True),
+        patch(
+            "app.application.tools.market_module.get_current_prices",
+            return_value={"AAPL": 200.0},
+        ),
+        patch("app.application.tools.db.get_all_holdings", return_value=[]),
+    ):
+        # 200달러 × 30주 = $6,000 > 기본 한도 $5,000
+        resp = auth_client.post(
+            "/api/trading/orders",
+            json={"ticker": "AAPL", "side": "buy", "qty": 30.0},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is False
+    assert "기본 한도" in data["error"]
+
+
+def test_buy_within_default_cap_proceeds(auth_client):
+    """기본 한도 이내 주문($5,000 미만)은 통과된다."""
+    _mock_order = {**_MOCK_ORDER, "broker_order_id": "default-cap-pass-uuid"}
+    with (
+        patch("app.application.tools.is_nyse_open", return_value=True),
+        patch(
+            "app.application.tools.market_module.get_current_prices",
+            return_value={"AAPL": 100.0},
+        ),
+        patch("app.application.tools.db.get_all_holdings", return_value=[]),
+        patch("app.application.tools.kis_client.place_order", return_value=_mock_order),
+        patch("app.application.tools.kis_client.sync_positions", return_value=[]),
+    ):
+        # 100달러 × 10주 = $1,000 < 기본 한도 $5,000
+        resp = auth_client.post(
+            "/api/trading/orders",
+            json={"ticker": "AAPL", "side": "buy", "qty": 10.0},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# BUG-04: 동시 실행 방지 (_job_lock)
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_job_triggers_are_serialized():
+    """두 번째 trigger_now()는 첫 번째 실행 중일 때 즉시 반환된다 (_job_lock 검증)."""
+    import threading
+    import time
+
+    from app.application.scheduler import _job_lock
+
+    execution_order = []
+
+    def slow_job():
+        if not _job_lock.acquire(blocking=False):
+            execution_order.append("skipped")
+            return
+        try:
+            execution_order.append("started")
+            time.sleep(0.05)
+            execution_order.append("finished")
+        finally:
+            _job_lock.release()
+
+    t1 = threading.Thread(target=slow_job)
+    t2 = threading.Thread(target=slow_job)
+    t1.start()
+    time.sleep(0.01)  # t1이 lock을 잡은 뒤 t2 시작
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert "started" in execution_order
+    assert "finished" in execution_order
+    assert "skipped" in execution_order
+    assert execution_order.count("started") == 1

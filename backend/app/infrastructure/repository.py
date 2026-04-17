@@ -309,13 +309,22 @@ def get_realized_trades(start_date: str, end_date: str) -> list[dict]:
         return [r.to_dict() for r in rows]
 
 
-def get_partially_filled_logs() -> list[dict]:
-    """broker_order_id가 있는 partially_filled 거래 로그 반환."""
+def get_pending_fill_logs() -> list[dict]:
+    """broker_order_id가 있는 미체결(partially_filled / accepted) 거래 로그 반환.
+
+    - partially_filled: 일부만 체결된 주문
+    - accepted: 국내 주문에서 polling 윈도우 내 체결 미확인 주문 (이후 체결됐을 수 있음)
+    """
     with get_session() as s:
+        from sqlalchemy import or_
+
         rows = (
             s.execute(
                 select(TradeLog).where(
-                    TradeLog.status == "partially_filled",
+                    or_(
+                        TradeLog.status == "partially_filled",
+                        TradeLog.status == "accepted",
+                    ),
                     TradeLog.broker_order_id.isnot(None),
                 )
             )
@@ -323,6 +332,11 @@ def get_partially_filled_logs() -> list[dict]:
             .all()
         )
         return [r.to_dict() for r in rows]
+
+
+def get_partially_filled_logs() -> list[dict]:
+    """하위 호환용 별칭. get_pending_fill_logs()를 사용하세요."""
+    return get_pending_fill_logs()
 
 
 def update_trade_log_status(log_id: int, status: str, filled_price: float | None = None) -> None:

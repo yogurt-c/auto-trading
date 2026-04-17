@@ -28,25 +28,33 @@ def _validate(validator, **kwargs):
 
 
 def test_entry_price_drop_positive(validator):
-    """양수 entry_price_drop_pct → WARNING."""
+    """양수 entry_price_drop_pct → ERROR (하락 조건은 음수여야 함)."""
     warnings = _validate(validator, entry_price_drop_pct=5.0)
     assert len(warnings) == 1
-    assert "양수" in warnings[0].message
+    assert warnings[0].severity == "error"
+    assert "0 이상" in warnings[0].message
+
+
+def test_entry_price_drop_zero(validator):
+    """entry_price_drop_pct=0.0 → ERROR (0이면 항상 트리거됨)."""
+    warnings = _validate(validator, entry_price_drop_pct=0.0)
+    assert len(warnings) == 1
+    assert warnings[0].severity == "error"
 
 
 def test_rsi_out_of_range_zero(validator):
-    """entry_rsi_below=0 → WARNING (0 이하)."""
+    """entry_rsi_below=0 → ERROR (0 이하, 저장 차단)."""
     warnings = _validate(validator, entry_rsi_below=0.0)
     assert len(warnings) == 1
-    assert warnings[0].severity == "warning"
+    assert warnings[0].severity == "error"
     assert "entry_rsi_below" in warnings[0].message
 
 
 def test_rsi_out_of_range_hundred(validator):
-    """entry_rsi_below=100 → WARNING (100 이상)."""
+    """entry_rsi_below=100 → ERROR (100 이상, 항상 트리거됨)."""
     warnings = _validate(validator, entry_rsi_below=100.0)
     assert len(warnings) == 1
-    assert warnings[0].severity == "warning"
+    assert warnings[0].severity == "error"
     assert "entry_rsi_below" in warnings[0].message
 
 
@@ -128,18 +136,39 @@ def test_entry_sma_cross_unsupported(validator):
     assert "entry_sma_cross" in warnings[0].message
 
 
-def test_entry_price_drop_positive_is_warning(validator):
-    """entry_price_drop_pct 양수 → ERROR 아닌 WARNING (AI 의도 불명)."""
+def test_entry_price_drop_positive_is_error(validator):
+    """entry_price_drop_pct 양수 → ERROR (저장 차단, 역전 전략 방지)."""
     warnings = _validate(validator, entry_price_drop_pct=5.0)
     assert len(warnings) == 1
-    assert warnings[0].severity == "warning"
+    assert warnings[0].severity == "error"
 
 
-def test_entry_disparity_positive_is_warning(validator):
-    """entry_disparity_below 양수 → ERROR 아닌 WARNING (AI 의도 불명)."""
+def test_entry_disparity_positive_is_error(validator):
+    """entry_disparity_below 양수 → ERROR (저장 차단, 역전 전략 방지)."""
     warnings = _validate(validator, entry_disparity_below=3.0)
     assert len(warnings) == 1
-    assert warnings[0].severity == "warning"
+    assert warnings[0].severity == "error"
+
+
+def test_entry_disparity_zero_is_error(validator):
+    """entry_disparity_below=0.0 → ERROR (0이면 항상 트리거됨)."""
+    warnings = _validate(validator, entry_disparity_below=0.0)
+    assert len(warnings) == 1
+    assert warnings[0].severity == "error"
+
+
+def test_entry_volume_surge_at_one_is_error(validator):
+    """entry_volume_surge=1.0 → ERROR (평균 거래량 이하면 급등 아님)."""
+    warnings = _validate(validator, entry_volume_surge=1.0)
+    assert len(warnings) == 1
+    assert warnings[0].severity == "error"
+
+
+def test_entry_volume_surge_below_one_is_error(validator):
+    """entry_volume_surge=0.5 → ERROR (평균의 절반, 논리 역전)."""
+    warnings = _validate(validator, entry_volume_surge=0.5)
+    assert len(warnings) == 1
+    assert warnings[0].severity == "error"
 
 
 def test_stop_loss_smaller_than_entry_drop_is_warning(validator):

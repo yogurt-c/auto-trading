@@ -420,8 +420,11 @@ def _place_order_locked(
             "error": "장 외 시간: US 시장은 ET 09:30-16:00에만 주문 가능합니다",
         }
 
-    # max_position 한도 검증 (매수 시에만)
-    if max_position and side.lower() == "buy":
+    # 매수 포지션 한도 검증 — max_position 미설정 시 통화별 기본 한도 적용
+    # (비즈니스 불변조건: 코드 레벨 강제, LLM 판단 의존 불가)
+    _DEFAULT_MAX_KRW = 5_000_000
+    _DEFAULT_MAX_USD = 5_000
+    if side.lower() == "buy":
         check_price = limit_price
         if check_price is None:
             prices = market_module.get_current_prices([ticker.upper()])
@@ -434,23 +437,43 @@ def _place_order_locked(
             order_value = qty * check_price
             projected_value = current_value + order_value
 
-            if projected_value > max_position:
+            effective_limit = (
+                max_position
+                if max_position is not None
+                else (_DEFAULT_MAX_KRW if currency == "KRW" else _DEFAULT_MAX_USD)
+            )
+            limit_label = "max_position" if max_position is not None else "기본 한도"
+
+            if projected_value > effective_limit:
                 detail = (
                     f"현재 {current_value:,.0f} + 신규 {order_value:,.0f} "
-                    f"= {projected_value:,.0f} (한도 {max_position:,.0f} {currency})"
+                    f"= {projected_value:,.0f} ({limit_label} {effective_limit:,.0f} {currency})"
                 )
-                logger.warning(f"order rejected — max_position exceeded: {detail}")
+                logger.warning(f"order rejected — {limit_label} exceeded: {detail}")
                 return {
                     "success": False,
-                    "error": f"max_position 한도 초과: {detail}",
+                    "error": f"{limit_label} 초과: {detail}",
                 }
 
-    # 매도 시 avg_cost 미리 조회
+    # 매도 시 avg_cost 조회 + sell_ratio 적용
     avg_cost: float | None = None
     if side.lower() == "sell":
         holdings = db.get_all_holdings()
         holding = next((h for h in holdings if h["ticker"] == ticker.upper()), None)
         avg_cost = holding["avg_price"] if holding else None
+
+        # sell_ratio 코드 레벨 강제: strategy_id가 있으면 보유 수량 비율로 qty 보정
+        if strategy_id is not None and holding and holding["shares"] > 0:
+            strat = db.get_strategy_by_id(strategy_id)
+            sell_ratio = strat.get("sell_ratio") if strat else None
+            if sell_ratio is not None and sell_ratio < 1.0:
+                max_sell_qty = holding["shares"] * sell_ratio
+                if qty > max_sell_qty:
+                    logger.info(
+                        f"sell_ratio={sell_ratio} applied: qty {qty} → {max_sell_qty:.4f} "
+                        f"for {ticker} (보유 {holding['shares']}주)"
+                    )
+                    qty = max_sell_qty
 
     try:
         order = kis_client.place_order(
@@ -536,8 +559,8 @@ def _place_order_locked(
 
 
 def sync_pending_orders() -> int:
-    """partially_filled 주문을 KIS에서 현재 상태로 갱신. 업데이트된 건수 반환."""
-    logs = db.get_partially_filled_logs()
+    """미체결(partially_filled / accepted) 주문을 KIS에서 현재 상태로 갱신. 업데이트된 건수 반환."""
+    logs = db.get_pending_fill_logs()
     updated = 0
     for log in logs:
         try:
