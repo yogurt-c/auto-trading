@@ -114,7 +114,9 @@ def _job_body() -> None:
             summary_text = f"열린 시장({', '.join(markets_open)})에 해당하는 활성 전략 없음"
             success = True
         else:
-            logger.info(f"trade executor started — {len(ids)} strategies for markets {markets_open}")
+            logger.info(
+                f"trade executor started — {len(ids)} strategies for markets {markets_open}"
+            )
             summary_text = run_trade_executor(markets_open=markets_open)
             update_strategies_last_checked(ids)
             success = True
