@@ -111,18 +111,13 @@ def _job_body() -> None:
         ids = [s["id"] for s in eligible]
         if not ids:
             logger.info(f"no active strategies for open markets {markets_open} — run skipped")
-            update_scheduler_run(
-                run["id"],
-                finished_at=now_kst(),
-                status="success",
-                strategies_checked=0,
-                summary=f"열린 시장({', '.join(markets_open)})에 해당하는 활성 전략 없음",
-            )
-            return
-        logger.info(f"trade executor started — {len(ids)} strategies for markets {markets_open}")
-        summary_text = run_trade_executor(markets_open=markets_open)
-        update_strategies_last_checked(ids)
-        success = True
+            summary_text = f"열린 시장({', '.join(markets_open)})에 해당하는 활성 전략 없음"
+            success = True
+        else:
+            logger.info(f"trade executor started — {len(ids)} strategies for markets {markets_open}")
+            summary_text = run_trade_executor(markets_open=markets_open)
+            update_strategies_last_checked(ids)
+            success = True
         logger.info(f"trade executor completed — run_id={run['id']}, strategies={len(ids)}")
     except Exception as e:
         error_msg = str(e)
