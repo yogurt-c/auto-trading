@@ -66,6 +66,7 @@ def _job_body() -> None:
     )
 
     from .agent import run_trade_executor
+
     logger.debug("scheduler job fired")
 
     # 장 외 시간에는 그냥 종료
