@@ -211,7 +211,7 @@ Workflow:
    - Do NOT use web_search to manually fetch prices or compute conditions
 5. If evaluate_strategy returns entry_triggered=true or exit_triggered=true, call place_order
    - Always pass max_position from the strategy if it is set
-   - For exit (sell) orders: compute qty = current_shares × sell_ratio
+   - For exit (sell) orders: compute qty = current_shares * sell_ratio
      (sell_ratio defaults to 1.0 if not set). Pass this computed qty to place_order.
      The system also enforces sell_ratio in code, but always compute it yourself for accuracy.
    - Market hours are enforced by the system; orders outside trading hours

@@ -516,8 +516,9 @@ def test_sync_pending_orders_picks_up_accepted_status():
 
 def test_sell_ratio_caps_qty_on_strategy_sell(auth_client):
     """sell_ratio=0.5인 전략의 매도: qty가 보유 수량의 50%로 제한된다."""
-    from sqlalchemy import delete as sa_delete
     from unittest.mock import patch
+
+    from sqlalchemy import delete as sa_delete
 
     from app.infrastructure import repository as db
     from app.infrastructure.database import get_session
@@ -661,7 +662,7 @@ def test_buy_without_max_position_uses_default_cap(auth_client):
         ),
         patch("app.application.tools.db.get_all_holdings", return_value=[]),
     ):
-        # 200달러 × 30주 = $6,000 > 기본 한도 $5,000
+        # 200달러 x 30주 = $6,000 > 기본 한도 $5,000
         resp = auth_client.post(
             "/api/trading/orders",
             json={"ticker": "AAPL", "side": "buy", "qty": 30.0},
@@ -685,7 +686,7 @@ def test_buy_within_default_cap_proceeds(auth_client):
         patch("app.application.tools.kis_client.place_order", return_value=_mock_order),
         patch("app.application.tools.kis_client.sync_positions", return_value=[]),
     ):
-        # 100달러 × 10주 = $1,000 < 기본 한도 $5,000
+        # 100달러 x 10주 = $1,000 < 기본 한도 $5,000
         resp = auth_client.post(
             "/api/trading/orders",
             json={"ticker": "AAPL", "side": "buy", "qty": 10.0},

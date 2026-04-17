@@ -33,6 +33,10 @@ _pnl_aggregator = RealizedPnlAggregator()
 # place_order는 체크 → 주문 사이에 TOCTOU 경쟁이 발생하지 않도록 직렬화
 _order_lock = threading.Lock()
 
+# max_position 미설정 시 적용되는 통화별 기본 포지션 한도 (비즈니스 불변조건)
+_DEFAULT_MAX_KRW = 5_000_000
+_DEFAULT_MAX_USD = 5_000
+
 
 # ---------------------------------------------------------------------------
 # Tool implementations
@@ -422,8 +426,6 @@ def _place_order_locked(
 
     # 매수 포지션 한도 검증 — max_position 미설정 시 통화별 기본 한도 적용
     # (비즈니스 불변조건: 코드 레벨 강제, LLM 판단 의존 불가)
-    _DEFAULT_MAX_KRW = 5_000_000
-    _DEFAULT_MAX_USD = 5_000
     if side.lower() == "buy":
         check_price = limit_price
         if check_price is None:
