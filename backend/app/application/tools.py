@@ -259,6 +259,22 @@ def evaluate_strategy(strategy_id: int) -> dict:
     except Exception as e:
         return {"error": f"Failed to fetch market data for {ticker} ({yf_ticker}): {e}"}
 
+    # DCA 전략: is_due 검증을 코드 레벨에서 강제
+    if strategy.get("dca_frequency_days"):
+        dca_check = _dca_checker.is_due(strategy)
+        if not dca_check.get("is_due"):
+            return {
+                "ticker": ticker,
+                "current_price": None,
+                "entry_triggered": False,
+                "exit_triggered": False,
+                "conditions": {},
+                "signal_score": None,
+                "holding_avg_price": None,
+                "current_pnl_pct": None,
+                "note": f"DCA 미도래: {dca_check.get('reason', '')}",
+            }
+
     # I/O: current holding from DB
     holdings = db.get_all_holdings()
     current_holding = next((h for h in holdings if h["ticker"] == ticker.upper()), None)
@@ -293,6 +309,23 @@ def evaluate_strategy(strategy_id: int) -> dict:
                 f"evaluate_strategy id={strategy_id}: entry blocked — "
                 f"position {current_value:,.0f} >= "
                 f"max_position {max_position:,.0f} {strategy_currency}"
+            )
+
+    # signal_score < 0.5 시 entry_triggered 차단 (2개 이상 진입 조건 전략)
+    if result_dict["entry_triggered"] and result_dict.get("signal_score") is not None:
+        entry_cond_count = sum(
+            1 for k in result_dict["conditions"] if k.startswith("entry_")
+        )
+        if entry_cond_count >= 2 and result_dict["signal_score"] < 0.5:
+            result_dict["entry_triggered"] = False
+            result_dict["note"] = (
+                f"signal_score {result_dict['signal_score']:.2f} < 0.5 — "
+                f"진입 조건 {entry_cond_count}개 중 미달로 매수 차단"
+            )
+            logger.info(
+                f"evaluate_strategy id={strategy_id}: entry blocked — "
+                f"signal_score={result_dict['signal_score']:.2f} < 0.5 "
+                f"({entry_cond_count} conditions)"
             )
 
     logger.debug(
@@ -647,6 +680,7 @@ TOOL_MAP = {
     "place_order": place_order,
     "check_dca_due": check_dca_due,
     "get_scheduler_runs": get_scheduler_runs,
+    "get_performance": get_performance,
 }
 
 
