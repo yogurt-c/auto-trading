@@ -347,11 +347,22 @@ class StrategyEvaluator:
                 if triggered:
                     entry_triggered = True
 
-        # signal_score: 발동된 진입 조건 수 / 전체 활성 진입 조건 수
-        entry_conds = [v for k, v in conditions.items() if k.startswith("entry_")]
-        if entry_conds:
-            triggered_count = sum(1 for c in entry_conds if c["triggered"])
-            signal_score: float | None = triggered_count / len(entry_conds)
+        # signal_score: 발동된 진입 조건 수 / 전체 설정된 진입 조건 수
+        # 데이터 미수신으로 평가 불가한 조건은 미발동(0)으로 산입 — 분모는 평가 가능 수가 아닌 설정 수 기준
+        configured_entry_count = sum([
+            strategy.get("entry_price_drop_pct") is not None,
+            strategy.get("entry_rsi_below") is not None,
+            bool(strategy.get("entry_bb_lower_touch")),
+            bool(strategy.get("entry_macd_hist_positive")),
+            strategy.get("entry_disparity_below") is not None,
+            strategy.get("entry_volume_surge") is not None,
+            strategy.get("entry_sma_cross") is not None,
+        ])
+        if configured_entry_count > 0:
+            triggered_count = sum(
+                1 for k, v in conditions.items() if k.startswith("entry_") and v["triggered"]
+            )
+            signal_score: float | None = triggered_count / configured_entry_count
         else:
             signal_score = None
 
