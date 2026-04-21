@@ -311,7 +311,15 @@ def test_strategy_splits_by_currency(aggregator):
     strategy_names = {1: "Mixed Strategy"}
     trades = [
         _make_rt(id=1, sell_price=150.0, avg_cost=100.0, qty=10.0, strategy_id=1, currency="USD"),
-        _make_rt(id=2, ticker="005930", sell_price=80000.0, avg_cost=60000.0, qty=5.0, strategy_id=1, currency="KRW"),
+        _make_rt(
+            id=2,
+            ticker="005930",
+            sell_price=80000.0,
+            avg_cost=60000.0,
+            qty=5.0,
+            strategy_id=1,
+            currency="KRW",
+        ),
     ]
     summary = aggregator.aggregate(trades, strategy_names, "2026-03-01", "2026-03-31")
 
@@ -329,7 +337,9 @@ def test_by_currency_summary_splits_krw_usd(aggregator):
     """KRW/USD 혼재 시 by_currency에 통화별 집계가 분리됨."""
     trades = [
         _make_rt(id=1, sell_price=150.0, avg_cost=100.0, qty=10.0, currency="USD"),
-        _make_rt(id=2, ticker="005930", sell_price=80000.0, avg_cost=70000.0, qty=5.0, currency="KRW"),
+        _make_rt(
+            id=2, ticker="005930", sell_price=80000.0, avg_cost=70000.0, qty=5.0, currency="KRW"
+        ),
     ]
     summary = aggregator.aggregate(trades, {}, "2026-03-01", "2026-03-31")
 

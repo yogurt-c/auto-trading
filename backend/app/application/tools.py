@@ -313,9 +313,7 @@ def evaluate_strategy(strategy_id: int) -> dict:
 
     # signal_score < 0.5 시 entry_triggered 차단 (2개 이상 진입 조건 전략)
     if result_dict["entry_triggered"] and result_dict.get("signal_score") is not None:
-        entry_cond_count = sum(
-            1 for k in result_dict["conditions"] if k.startswith("entry_")
-        )
+        entry_cond_count = sum(1 for k in result_dict["conditions"] if k.startswith("entry_"))
         if entry_cond_count >= 2 and result_dict["signal_score"] < 0.5:
             result_dict["entry_triggered"] = False
             result_dict["note"] = (
@@ -713,6 +711,24 @@ PORTFOLIO_TOOLS = [
             "Call this to get the latest holdings before analysis."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_scheduler_runs",
+        "description": (
+            "Return recent automated scheduler execution history. "
+            "Use this to review past runs, check for failures, or analyze execution patterns. "
+            "Do NOT delegate to trade-executor just to read this history."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of recent runs to return (default 10)",
+                },
+            },
+            "required": [],
+        },
     },
 ]
 

@@ -95,7 +95,14 @@ def test_performance_response_structure(auth_client):
         )
     assert resp.status_code == 200
     data = resp.json()
-    required_keys = {"period_start", "period_end", "by_currency", "trades", "by_period", "by_strategy"}
+    required_keys = {
+        "period_start",
+        "period_end",
+        "by_currency",
+        "trades",
+        "by_period",
+        "by_strategy",
+    }
     assert required_keys <= data.keys()
 
 
@@ -174,8 +181,24 @@ def test_performance_with_strategy_names(auth_client):
 def test_performance_by_strategy_splits_currency(auth_client):
     """같은 전략이 KRW/USD 거래 → by_strategy에 통화별 2개 row."""
     trades = [
-        _make_realized_trade(id=1, ticker="AAPL", currency="USD", sell_price=150.0, avg_cost=100.0, qty=10.0, strategy_id=1),
-        _make_realized_trade(id=2, ticker="005930", currency="KRW", sell_price=80000.0, avg_cost=60000.0, qty=5.0, strategy_id=1),
+        _make_realized_trade(
+            id=1,
+            ticker="AAPL",
+            currency="USD",
+            sell_price=150.0,
+            avg_cost=100.0,
+            qty=10.0,
+            strategy_id=1,
+        ),
+        _make_realized_trade(
+            id=2,
+            ticker="005930",
+            currency="KRW",
+            sell_price=80000.0,
+            avg_cost=60000.0,
+            qty=5.0,
+            strategy_id=1,
+        ),
     ]
     strategies = [{"id": 1, "name": "Mixed"}]
     with (
