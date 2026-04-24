@@ -85,9 +85,14 @@ def _job_body() -> None:
         sync_positions()
         logger.info("holdings synced from KIS at job start")
 
-        synced = sync_pending_orders()
-        if synced:
-            logger.info(f"pending orders synced: {synced} updated")
+        sync_result = sync_pending_orders()
+        logger.info(
+            f"pending orders synced: updated={sync_result['updated']} "
+            f"still_pending={sync_result['still_pending']} "
+            f"errors={len(sync_result['errors'])}"
+        )
+        for err in sync_result["errors"]:
+            logger.warning(f"sync_pending error: {err}")
     except Exception as e:
         logger.warning(f"pre-job KIS sync failed — job aborted: {e}")
         run = add_scheduler_run()

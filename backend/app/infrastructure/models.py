@@ -35,20 +35,6 @@ class Holding(DictMixin, Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst, onupdate=now_kst)
 
 
-class Transaction(DictMixin, Base):
-    __tablename__ = "transactions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ticker: Mapped[str] = mapped_column(String, nullable=False)
-    action: Mapped[str] = mapped_column(String, nullable=False)  # 'buy' | 'sell'
-    shares: Mapped[float] = mapped_column(Float, nullable=False)
-    price: Mapped[float] = mapped_column(Float, nullable=False)
-    total: Mapped[float] = mapped_column(Float, nullable=False)
-    strategy_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("strategies.id"), nullable=True
-    )
-    executed_at: Mapped[datetime] = mapped_column(DateTime, default=now_kst)
-
 
 class Strategy(DictMixin, Base):
     __tablename__ = "strategies"

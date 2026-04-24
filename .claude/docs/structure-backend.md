@@ -93,7 +93,7 @@ backend/
 | `config.py` | Settings 캐시 (SQLAlchemy 기반) | `reload_settings()` — 설정 저장 후 호출 |
 | `database.py` | SQLite 초기화 (Alembic auto-migrate) | `get_session()` — context manager |
 | `market.py` | `get_current_prices(tickers)` | yfinance, 6자리 한국 티커는 자동으로 `.KS` suffix 추가, 실패 티커는 결과에서 제외 |
-| `models.py` | ORM: Holding, Transaction, Strategy, TradeLog, RealizedTrade, Setting, SchedulerRun | market/currency 필드 추가됨. **dict key 접근 시 반드시 이 파일의 컬럼명을 참조할 것** — Holding: `shares`(NOT quantity), TradeLog: `qty`·`side`(NOT shares·action) |
+| `models.py` | ORM: Holding, Strategy, TradeLog, RealizedTrade, Setting, SchedulerRun | market/currency 필드 추가됨. **dict key 접근 시 반드시 이 파일의 컬럼명을 참조할 것** — Holding: `shares`(NOT quantity), TradeLog: `qty`·`side`(NOT shares·action) |
 | `repository.py` | 전체 DB CRUD 함수 | get_all_holdings, save_strategy, add_trade_log, add_realized_trade, get_realized_trades … |
 
 ### `backend/app/domain/` — Domain Layer

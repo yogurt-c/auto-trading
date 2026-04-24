@@ -26,6 +26,15 @@ async def lifespan(app: FastAPI):
     init_db()
     get_or_create_secret_key()  # 서버 시작 시 Secret Key 초기화
     ensure_started()
+    # 서버 기동 시 DB 자가 수리: 누락된 realized_trades 복구 (KIS 호출 없음)
+    try:
+        from app.application.tools import repair_realized_trades_from_db
+
+        repair_realized_trades_from_db()
+    except Exception as e:
+        from loguru import logger
+
+        logger.warning(f"startup repair_realized_trades_from_db failed: {e}")
     yield
 
 

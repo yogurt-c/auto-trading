@@ -173,8 +173,9 @@ graph LR
         P1["GET /api/portfolio<br/>holdings + P&L 스냅샷"]
         P2["POST /api/portfolio/sync<br/>KIS 포지션 동기화"]
         P3["GET /api/portfolio/holdings<br/>DB 목록 (시세 없음)"]
-        P4["GET /api/portfolio/transactions<br/>KIS 체결 주문 이력"]
+        P4["GET /api/portfolio/transactions<br/>trade_logs 기반 KR+US 전체 거래 이력 (filled만)"]
         P5["GET /api/portfolio/performance<br/>기간별 실현 손익 집계"]
+        P6["POST /api/portfolio/reconcile<br/>KIS KR+US 체결 pull → realized_trades 복구"]
     end
 
     subgraph strategies["/api/strategies"]

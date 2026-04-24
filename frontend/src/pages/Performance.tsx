@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import styled from '@emotion/styled'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
-import { performanceApi } from '../api/endpoints'
+import { performanceApi, portfolioApi } from '../api/endpoints'
 import MetricCard from '../components/MetricCard'
 import { colors, spacing, fontSize, radius, shadow } from '../theme'
 import { fmt, fmtCurrency } from '../lib/format'
@@ -35,10 +35,30 @@ type Preset = '7D' | '30D' | '90D' | '1Y' | 'All' | 'custom'
 // ---------------------------------------------------------------------------
 
 export default function Performance() {
+  const qc = useQueryClient()
   const [preset, setPreset] = useState<Preset>('30D')
   const [groupBy, setGroupBy] = useState<'day' | 'month'>('day')
   const [startDate, setStartDate] = useState(() => offsetDate(-30))
   const [endDate, setEndDate] = useState(() => today())
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
+
+  const reconcileMutation = useMutation({
+    mutationFn: () => portfolioApi.reconcile(30),
+    onSuccess: result => {
+      const { db_repaired, kr_synced, us_synced, pending_resolved, errors } = result
+      const errCount = errors.length
+      setSyncMsg(
+        `복구 완료: DB ${db_repaired}건 / KR ${kr_synced}건 / US ${us_synced}건 / Pending ${pending_resolved}건${errCount ? ` (오류 ${errCount}건)` : ''}`
+      )
+      void qc.invalidateQueries({ queryKey: ['performance'] })
+      void qc.invalidateQueries({ queryKey: ['transactions'] })
+      setTimeout(() => setSyncMsg(null), 6000)
+    },
+    onError: () => {
+      setSyncMsg('KIS 동기화 실패. 잠시 후 다시 시도해 주세요.')
+      setTimeout(() => setSyncMsg(null), 4000)
+    },
+  })
 
   function applyPreset(p: Preset) {
     setPreset(p)
@@ -101,9 +121,17 @@ export default function Performance() {
           <RefreshBtn onClick={() => void refetch()} disabled={isLoading}>
             {isLoading ? '로딩 중...' : '새로고침'}
           </RefreshBtn>
+          <SyncBtn
+            onClick={() => reconcileMutation.mutate()}
+            disabled={reconcileMutation.isPending}
+            title="최근 30일 KR+US 체결 내역을 KIS에서 가져와 누락된 실현 손익을 복구합니다"
+          >
+            {reconcileMutation.isPending ? '동기화 중...' : 'KIS 동기화'}
+          </SyncBtn>
         </Controls>
       </Header>
 
+      {syncMsg && <SyncMsg error={syncMsg.includes('실패')}>{syncMsg}</SyncMsg>}
       {error && <ErrorMsg>데이터를 불러오는 중 오류가 발생했습니다.</ErrorMsg>}
       {!enabled && <ErrorMsg>start_date는 end_date보다 이전이어야 합니다.</ErrorMsg>}
 
@@ -396,6 +424,36 @@ const RefreshBtn = styled.button`
     opacity: 0.5;
     cursor: not-allowed;
   }
+`
+
+const SyncBtn = styled.button`
+  padding: 6px 14px;
+  border-radius: ${radius.sm};
+  border: 1px solid ${colors.primary};
+  background: transparent;
+  color: ${colors.primary};
+  font-size: ${fontSize.sm};
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) {
+    background: ${colors.primary};
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`
+
+const SyncMsg = styled.div<{ error?: boolean }>`
+  font-size: ${fontSize.sm};
+  padding: ${spacing.sm} ${spacing.md};
+  border-radius: ${radius.md};
+  border: 1px solid ${p => p.error ? `${colors.negative}44` : `${colors.positive}44`};
+  background: ${p => p.error ? `${colors.negative}18` : `${colors.positive}18`};
+  color: ${p => p.error ? colors.negative : colors.positive};
 `
 
 const ErrorMsg = styled.div`

@@ -19,11 +19,23 @@ export interface Transaction {
   id: string
   ticker: string
   action: 'buy' | 'sell'
+  side: 'buy' | 'sell'
   shares: number
   price: number
   total: number
   executed_at: string
   currency: Currency
+  market: Market
+  strategy_id: number | null
+}
+
+export interface ReconcileResult {
+  db_repaired: number
+  kr_synced: number
+  us_synced: number
+  pending_resolved: number
+  pending_remaining: number
+  errors: Array<{ source?: string; trade_log_id?: number; broker_order_id?: string; ticker?: string; market?: string; error: string }>
 }
 
 export interface MarketSummary {

@@ -6,7 +6,7 @@ from loguru import logger
 from sqlalchemy import delete, func, select, update
 
 from .database import get_session
-from .models import Holding, RealizedTrade, SchedulerRun, Setting, Strategy, TradeLog, Transaction
+from .models import Holding, RealizedTrade, SchedulerRun, Setting, Strategy, TradeLog
 from .timezone import now_kst
 
 # ---------------------------------------------------------------------------
@@ -19,43 +19,6 @@ def get_all_holdings() -> list[dict]:
         rows = s.execute(select(Holding).order_by(Holding.ticker)).scalars().all()
         return [r.to_dict() for r in rows]
 
-
-def upsert_holding(ticker: str, shares: float, avg_price: float) -> dict:
-    """Add shares or update via weighted average."""
-    if shares < 0:
-        raise ValueError(f"shares must be non-negative, got {shares}")
-    ticker = ticker.upper()
-    with get_session() as s:
-        existing = s.execute(
-            select(Holding).where(Holding.ticker == ticker).with_for_update()
-        ).scalar_one_or_none()
-
-        if existing:
-            new_total = existing.shares + shares
-            if new_total < 0:
-                raise ValueError(
-                    f"resulting shares would be negative: {new_total} "
-                    f"(existing={existing.shares}, delta={shares})"
-                )
-            new_avg = (existing.avg_price * existing.shares + avg_price * shares) / new_total
-            existing.shares = new_total
-            existing.avg_price = new_avg
-            holding = existing
-        else:
-            holding = Holding(ticker=ticker, shares=shares, avg_price=avg_price)
-            s.add(holding)
-
-        s.add(
-            Transaction(
-                ticker=ticker,
-                action="buy",
-                shares=shares,
-                price=avg_price,
-                total=shares * avg_price,
-            )
-        )
-        s.flush()
-        return holding.to_dict()
 
 
 def update_holding(ticker: str, shares: float, avg_price: float) -> dict | None:
@@ -111,16 +74,51 @@ def rebuild_holdings_from_broker(positions: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Transactions
+# Transactions (trade_logs 기반)
 # ---------------------------------------------------------------------------
 
 
-def get_transactions(ticker: str | None = None, limit: int = 100) -> list[dict]:
+def list_transactions(limit: int = 50, market: str | None = None) -> list[dict]:
+    """trade_logs 기반 KR+US 전체 거래 이력 반환 (매수·매도 모두 포함).
+
+    executed_at DESC 정렬. market 필터 선택적.
+    """
+    from sqlalchemy import or_
+
     with get_session() as s:
-        q = select(Transaction).order_by(Transaction.executed_at.desc()).limit(limit)
-        if ticker:
-            q = q.where(Transaction.ticker == ticker.upper())
-        return [r.to_dict() for r in s.execute(q).scalars().all()]
+        q = (
+            select(TradeLog)
+            .where(
+                or_(TradeLog.status == "filled", TradeLog.status == "accepted"),
+                TradeLog.filled_price.isnot(None),
+            )
+            .order_by(TradeLog.executed_at.desc())
+            .limit(limit)
+        )
+        if market:
+            q = q.where(TradeLog.market == market.upper())
+        dicts = [r.to_dict() for r in s.execute(q).scalars().all()]
+
+    result = []
+    for d in dicts:
+        result.append(
+            {
+                "id": d["id"],
+                "ticker": d["ticker"],
+                "action": d["side"],
+                "shares": d["qty"],
+                "price": d["filled_price"],
+                "total": round((d["qty"] or 0) * (d["filled_price"] or 0), 6),
+                "executed_at": d["executed_at"].isoformat()
+                if hasattr(d["executed_at"], "isoformat")
+                else str(d["executed_at"]),
+                "market": d["market"],
+                "currency": d["currency"],
+                "side": d["side"],
+                "strategy_id": d["strategy_id"],
+            }
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +288,62 @@ def add_realized_trade(
         s.add(rt)
         s.flush()
         return rt.to_dict()
+
+
+def upsert_realized_trade_by_trade_log_id(
+    trade_log_id: int,
+    ticker: str,
+    qty: float,
+    sell_price: float,
+    avg_cost: float,
+    realized_pnl: float,
+    realized_pnl_pct: float,
+    currency: str,
+    strategy_id: int | None = None,
+) -> tuple[str, int]:
+    """trade_log_id 기준 realized_trade INSERT OR IGNORE.
+
+    Returns: ("inserted" | "unchanged", row_id)
+    """
+    with get_session() as s:
+        existing = s.execute(
+            select(RealizedTrade).where(RealizedTrade.trade_log_id == trade_log_id)
+        ).scalar_one_or_none()
+        if existing:
+            return ("unchanged", existing.id)
+        rt = RealizedTrade(
+            trade_log_id=trade_log_id,
+            ticker=ticker.upper(),
+            qty=qty,
+            sell_price=sell_price,
+            avg_cost=avg_cost,
+            realized_pnl=realized_pnl,
+            realized_pnl_pct=realized_pnl_pct,
+            currency=currency,
+            strategy_id=strategy_id,
+        )
+        s.add(rt)
+        s.flush()
+        return ("inserted", rt.id)
+
+
+def list_orphan_sell_logs() -> list[dict]:
+    """realized_trade 없는 완료된 매도 trade_log 반환.
+
+    조건: side=sell, status=filled, filled_price IS NOT NULL, avg_cost_snapshot IS NOT NULL,
+          대응하는 realized_trades 행 없음.
+    """
+    with get_session() as s:
+        existing_log_ids = s.execute(select(RealizedTrade.trade_log_id)).scalars().all()
+        q = select(TradeLog).where(
+            TradeLog.side == "sell",
+            TradeLog.status == "filled",
+            TradeLog.filled_price.isnot(None),
+            TradeLog.avg_cost_snapshot.isnot(None),
+            TradeLog.id.notin_(existing_log_ids) if existing_log_ids else True,
+        )
+        rows = s.execute(q).scalars().all()
+        return [r.to_dict() for r in rows]
 
 
 def get_realized_trades(start_date: str, end_date: str) -> list[dict]:

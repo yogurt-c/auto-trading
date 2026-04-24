@@ -98,18 +98,32 @@ def get_holdings():
 
 
 @router.get("/portfolio/transactions")
-def get_transactions(limit: int = Query(50, ge=1, le=500)):
-    """KIS 체결 주문 이력 반환. 국내 전용이므로 currency='KRW' 주입."""
+def get_transactions(
+    limit: int = Query(50, ge=1, le=500),
+    market: str | None = Query(None, pattern=r"^(KR|US)$"),
+):
+    """trade_logs 기반 KR+US 전체 거래 이력 반환 (매수·매도 모두, 날짜 무관)."""
+    txns = db.list_transactions(limit=limit, market=market)
+    return {"transactions": txns, "count": len(txns)}
+
+
+@router.post("/portfolio/reconcile")
+def reconcile_portfolio(
+    lookback_days: int = Query(30, ge=1, le=90, description="조회 기간 (일)"),
+):
+    """KIS에서 KR+US 체결 내역을 가져와 누락된 realized_trades를 복구한다.
+
+    단계: DB 자가 수리 → pending 주문 동기화 → KR pull → US pull
+    """
+    from app.application.tools import reconcile_fills
+
     try:
-        txns = kis_client.get_filled_orders(limit=limit)
+        result = reconcile_fills(lookback_days=lookback_days)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"KIS 주문 이력 조회 실패: {e!s}")
-
-    # get_filled_orders()는 국내(KRW) 전용 — currency 명시
-    txns_with_currency = [{"currency": "KRW", **t} for t in txns]
-    return {"transactions": txns_with_currency, "count": len(txns)}
+        raise HTTPException(status_code=503, detail=f"reconcile 실패: {e!s}")
+    return result
 
 
 @router.get("/portfolio/performance")

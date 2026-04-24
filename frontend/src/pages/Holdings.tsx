@@ -6,7 +6,7 @@ import DataTable from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import type { Holding, Transaction } from '../api/types'
 import { colors, spacing, fontSize, radius } from '../theme'
-import { fmtCurrency } from '../lib/format'
+import { fmtCurrency, formatKisDate } from '../lib/format'
 
 const holdingColumns: Column<Holding>[] = [
   { key: 'ticker', header: 'Ticker' },
@@ -38,8 +38,9 @@ const holdingColumns: Column<Holding>[] = [
 ]
 
 const txColumns: Column<Transaction>[] = [
-  { key: 'executed_at', header: 'Date', render: r => r.executed_at.slice(0, 10) },
+  { key: 'executed_at', header: 'Date', render: r => formatKisDate(r.executed_at) },
   { key: 'ticker', header: 'Ticker' },
+  { key: 'market', header: 'Market' },
   {
     key: 'action',
     header: 'Type',

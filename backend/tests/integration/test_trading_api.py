@@ -191,7 +191,7 @@ def test_sync_pending_orders_updates_status(db_partially_filled_log):
     ):
         updated = sync_pending_orders()
 
-    assert updated >= 1
+    assert updated["updated"] >= 1
     logs = db.get_trade_logs(limit=100, offset=0)
     synced = next((lg for lg in logs if lg["id"] == db_partially_filled_log["id"]), None)
     assert synced is not None
@@ -217,7 +217,7 @@ def test_sync_pending_orders_skips_still_partial(db_partially_filled_log):
     ):
         updated = sync_pending_orders()
 
-    assert updated == 0
+    assert updated["updated"] == 0
     logs = db.get_trade_logs(limit=100, offset=0)
     synced = next((lg for lg in logs if lg["id"] == db_partially_filled_log["id"]), None)
     assert synced["status"] == "partially_filled"
@@ -357,7 +357,7 @@ def test_rebuild_holdings_empty_positions_guard():
     from app.infrastructure.models import Holding as HoldingModel
 
     # 보유 종목 직접 생성
-    db.upsert_holding("GUARDTEST", 10.0, 50.0)
+    db.rebuild_holdings_from_broker([{"ticker": "GUARDTEST", "qty": 10.0, "avg_entry_price": 50.0, "market": "US", "currency": "USD"}])
     try:
         # KIS 0 positions → guard 발동, holdings 유지
         result = db.rebuild_holdings_from_broker([])
@@ -401,7 +401,7 @@ def test_sync_pending_orders_sell_creates_realized_trade():
         ):
             updated = sync_pending_orders()
 
-        assert updated >= 1
+        assert updated["updated"] >= 1
         realized = db.get_realized_trades("2000-01-01", "2099-12-31")
         our = [r for r in realized if r["trade_log_id"] == log["id"]]
         assert len(our) == 1
@@ -426,7 +426,7 @@ def test_place_order_filled_price_zero_no_realized_trade(auth_client):
     from app.infrastructure.models import TradeLog as TradeLogModel
 
     # 보유 종목 생성 (avg_cost is not None)
-    db.upsert_holding("ZPTEST", 5.0, 100.0)
+    db.rebuild_holdings_from_broker([{"ticker": "ZPTEST", "qty": 5.0, "avg_entry_price": 100.0, "market": "US", "currency": "USD"}])
     try:
         _mock_order = {
             "broker_order_id": "sell-zero-price-uuid",
@@ -498,7 +498,7 @@ def test_sync_pending_orders_picks_up_accepted_status():
         ):
             updated = sync_pending_orders()
 
-        assert updated >= 1
+        assert updated["updated"] >= 1
         logs = db.get_trade_logs(limit=100, offset=0)
         synced = next((lg for lg in logs if lg["id"] == log["id"]), None)
         assert synced is not None
@@ -536,7 +536,7 @@ def test_sell_ratio_caps_qty_on_strategy_sell(auth_client):
         sell_ratio=0.5,
     )
     # 보유 종목 설정 (10주 보유)
-    db.upsert_holding("SRTEST", 10.0, 100.0)
+    db.rebuild_holdings_from_broker([{"ticker": "SRTEST", "qty": 10.0, "avg_entry_price": 100.0, "market": "US", "currency": "USD"}])
 
     captured_qty = []
 
@@ -601,7 +601,7 @@ def test_sell_ratio_one_does_not_cap_qty(auth_client):
         entry_rsi_below=30.0,
         sell_ratio=1.0,
     )
-    db.upsert_holding("SRFULL", 10.0, 100.0)
+    db.rebuild_holdings_from_broker([{"ticker": "SRFULL", "qty": 10.0, "avg_entry_price": 100.0, "market": "US", "currency": "USD"}])
 
     captured_qty = []
 

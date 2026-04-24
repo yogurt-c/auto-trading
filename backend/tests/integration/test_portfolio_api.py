@@ -139,60 +139,82 @@ def test_get_holdings(auth_client, db_holding):
     assert our_h["avg_price"] == pytest.approx(200.0)
 
 
-def test_get_transactions(auth_client):
-    """GET /api/portfolio/transactions → KIS 체결 주문 이력 반환 (KRW currency 주입)."""
-    mock_orders = [
-        {
-            "id": "abc-123",
-            "ticker": "AAPL",
-            "action": "buy",
-            "shares": 10.0,
-            "price": 150.0,
-            "total": 1500.0,
-            "executed_at": "2026-03-18T10:30:00+09:00",
-        }
-    ]
-    with patch("app.api.portfolio.kis_client.get_filled_orders", return_value=mock_orders):
-        resp = auth_client.get("/api/portfolio/transactions")
+def test_get_transactions_empty(auth_client):
+    """GET /api/portfolio/transactions → trade_logs 없을 때 빈 응답."""
+    resp = auth_client.get("/api/portfolio/transactions")
     assert resp.status_code == 200
     data = resp.json()
     assert "transactions" in data
     assert "count" in data
-    assert data["count"] == 1
-    t = data["transactions"][0]
-    assert t["id"] == "abc-123"
-    assert t["ticker"] == "AAPL"
+    assert data["count"] == 0
+    assert data["transactions"] == []
+
+
+def test_get_transactions_returns_filled_trade_logs(auth_client, app_client):
+    """filled trade_log가 있으면 트랜잭션 목록에 포함된다."""
+    from app.infrastructure import repository as db
+
+    log = db.add_trade_log(
+        ticker="AAPL",
+        side="buy",
+        qty=10.0,
+        order_type="market",
+        status="filled",
+        filled_price=150.0,
+        currency="USD",
+        market="US",
+    )
+
+    resp = auth_client.get("/api/portfolio/transactions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] >= 1
+    tickers = [t["ticker"] for t in data["transactions"]]
+    assert "AAPL" in tickers
+
+    t = next(t for t in data["transactions"] if t["ticker"] == "AAPL")
     assert t["action"] == "buy"
     assert t["shares"] == pytest.approx(10.0)
     assert t["price"] == pytest.approx(150.0)
-    assert t["total"] == pytest.approx(1500.0)
-    assert t["currency"] == "KRW"  # 국내 전용이므로 항상 KRW
+    assert t["currency"] == "USD"
+    assert t["market"] == "US"
+    assert "executed_at" in t
 
 
-def test_get_transactions_limit_param(auth_client):
-    """GET /api/portfolio/transactions?limit=10 → limit 파라미터 수용."""
-    with patch("app.api.portfolio.kis_client.get_filled_orders", return_value=[]) as mock_fn:
-        resp = auth_client.get("/api/portfolio/transactions?limit=10")
-    assert resp.status_code == 200
-    mock_fn.assert_called_once_with(limit=10)
+def test_get_transactions_market_filter(auth_client, app_client):
+    """market 필터 파라미터로 KR/US 분리 조회 가능."""
+    from app.infrastructure import repository as db
 
+    db.add_trade_log(
+        ticker="005930",
+        side="sell",
+        qty=5.0,
+        order_type="market",
+        status="filled",
+        filled_price=75000.0,
+        currency="KRW",
+        market="KR",
+    )
+    db.add_trade_log(
+        ticker="TSLA",
+        side="sell",
+        qty=2.0,
+        order_type="market",
+        status="filled",
+        filled_price=300.0,
+        currency="USD",
+        market="US",
+    )
 
-def test_get_transactions_alpaca_failure(auth_client):
-    """Alpaca 오류 시 503 반환."""
-    with patch(
-        "app.api.portfolio.kis_client.get_filled_orders", side_effect=Exception("KIS error")
-    ):
-        resp = auth_client.get("/api/portfolio/transactions")
-    assert resp.status_code == 503
+    resp_kr = auth_client.get("/api/portfolio/transactions?market=KR")
+    assert resp_kr.status_code == 200
+    kr_data = resp_kr.json()
+    assert all(t["market"] == "KR" for t in kr_data["transactions"])
 
-
-def test_get_transactions_alpaca_key_missing(auth_client):
-    """Alpaca API 키 미설정 시 400 반환."""
-    with patch(
-        "app.api.portfolio.kis_client.get_filled_orders", side_effect=ValueError("API 키 없음")
-    ):
-        resp = auth_client.get("/api/portfolio/transactions")
-    assert resp.status_code == 400
+    resp_us = auth_client.get("/api/portfolio/transactions?market=US")
+    assert resp_us.status_code == 200
+    us_data = resp_us.json()
+    assert all(t["market"] == "US" for t in us_data["transactions"])
 
 
 def test_sync_holdings_success(auth_client):

@@ -17,8 +17,10 @@ import type {
   PerformanceSummary,
   RealizedTrade,
   Currency,
+  Market,
   EvaluationResult,
   StrategyPreset,
+  ReconcileResult,
 } from './types'
 
 // ── Portfolio ──────────────────────────────────────────────────────────────
@@ -71,21 +73,29 @@ export const portfolioApi = {
       (r.data.holdings ?? []).map(parseHolding)
     ),
 
-  transactions: (limit = 50) =>
+  transactions: (limit = 50, market?: 'KR' | 'US') =>
     api
-      .get<any>('/portfolio/transactions', { params: { limit } })
+      .get<any>('/portfolio/transactions', { params: { limit, market } })
       .then(r =>
         (r.data.transactions ?? []).map((t: any): Transaction => ({
           id: t.id,
           ticker: t.ticker,
-          action: t.action as 'buy' | 'sell',
+          action: (t.action ?? t.side) as 'buy' | 'sell',
+          side: (t.side ?? t.action) as 'buy' | 'sell',
           shares: t.shares,
           price: t.price,
           total: t.total,
           executed_at: t.executed_at,
           currency: (t.currency ?? 'KRW') as Currency,
+          market: (t.market ?? 'KR') as Market,
+          strategy_id: t.strategy_id ?? null,
         }))
       ),
+
+  reconcile: (lookback_days = 30) =>
+    api
+      .post<ReconcileResult>('/portfolio/reconcile', null, { params: { lookback_days } })
+      .then(r => r.data),
 }
 
 // ── Strategies ─────────────────────────────────────────────────────────────

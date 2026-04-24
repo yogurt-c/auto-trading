@@ -469,65 +469,102 @@ def get_positions() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def get_order(broker_order_id: str, market: str = "US") -> dict:
+def get_order(broker_order_id: str, market: str = "US", lookback_days: int = 7) -> dict:
     """브로커 주문번호로 주문 상태 조회.
 
     market: 'KR' 또는 'US'
+    lookback_days: KR 조회 시작일 (오늘 기준 N일 전). 날짜 경계 넘은 주문 조회를 위해 사용.
     """
     s = get_settings()
     cano, acnt_cd = _parse_account(s.kis_account_no)
 
     if market == "KR":
-        today = datetime.now(tz=_KST).strftime("%Y%m%d")
+        today = datetime.now(tz=_KST)
+        end_dt = today.strftime("%Y%m%d")
+        start_dt = (today - timedelta(days=lookback_days)).strftime("%Y%m%d")
         tr_id = _KR_ORDER_INQUIRE_PAPER if s.kis_paper else _KR_ORDER_INQUIRE_REAL
-        resp = httpx.get(
-            f"{_base_url()}/uapi/domestic-stock/v1/trading/inquire-order",
-            headers=_headers(tr_id),
-            params={
-                "CANO": cano,
-                "ACNT_PRDT_CD": acnt_cd,
-                "ODNO": broker_order_id,
-                "ORD_GNO_BRNO": "",
-                "INQR_DVSN": "01",
-                "INQR_STRT_DT": today,
-                "INQR_END_DT": today,
-            },
-            timeout=10,
-        )
+        url = f"{_base_url()}/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+        params: dict = {
+            "CANO": cano,
+            "ACNT_PRDT_CD": acnt_cd,
+            "INQR_STRT_DT": start_dt,
+            "INQR_END_DT": end_dt,
+            "SLL_BUY_DVSN_CD": "00",
+            "INQR_DVSN": "01",
+            "PDNO": "",
+            "CCLD_DVSN": "00",
+            "ORD_GNO_BRNO": "",
+            "ODNO": broker_order_id,
+            "INQR_DVSN_3": "00",
+            "INQR_DVSN_1": "",
+            "EXCG_ID_DVSN_CD": "KRX",
+            "CTX_AREA_FK100": "",
+            "CTX_AREA_NK100": "",
+        }
     else:
         tr_id = _US_ORDER_INQUIRE_PAPER if s.kis_paper else _US_ORDER_INQUIRE_REAL
-        resp = httpx.get(
-            f"{_base_url()}/uapi/overseas-stock/v1/trading/inquire-order",
-            headers=_headers(tr_id),
-            params={
-                "CANO": cano,
-                "ACNT_PRDT_CD": acnt_cd,
-                "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
-                "ODNO": broker_order_id,
-                "INQR_DVSN": "00",
-            },
-            timeout=10,
-        )
+        url = f"{_base_url()}/uapi/overseas-stock/v1/trading/inquire-order"
+        params = {
+            "CANO": cano,
+            "ACNT_PRDT_CD": acnt_cd,
+            "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
+            "ODNO": broker_order_id,
+            "INQR_DVSN": "00",
+        }
 
-    resp.raise_for_status()
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        if attempt > 0:
+            logger.info(f"get_order 재시도 {attempt}/2 (1s 대기) order={broker_order_id}")
+            time.sleep(1)
+        resp = httpx.get(url, headers=_headers(tr_id), params=params, timeout=10)
+        if resp.status_code >= 500:
+            last_exc = RuntimeError(f"HTTP {resp.status_code}")
+            continue
+        resp.raise_for_status()
+        break
+    else:
+        raise last_exc  # type: ignore[misc]
     data = _check_response(resp.json(), f"inquire-order ({market})")
 
-    output = data.get("output", {})
-    if isinstance(output, list):
-        output = output[0] if output else {}
+    if market == "KR":
+        # inquire-daily-ccld 응답: output1 리스트에서 ODNO 매칭 항목 탐색
+        items = data.get("output1", [])
+        output = next((item for item in items if item.get("odno") == broker_order_id), {})
 
-    # KIS 체결 상태 → 내부 status 매핑
-    status_raw = output.get("ord_stts", output.get("odno_stts", ""))
-    status = _map_order_status(status_raw)
+        cncl_yn = output.get("cncl_yn", "")
+        tot_ccld_qty = float(output.get("tot_ccld_qty", 0) or 0)
+        rmn_qty = float(output.get("rmn_qty", 0) or 0)
+        rjct_qty = float(output.get("rjct_qty", 0) or 0)
+        filled_price = float(output.get("avg_prvs", 0) or 0) or None
 
-    filled_qty = float(output.get("tot_ccld_qty", output.get("ccld_qty", 0)) or 0)
-    filled_price = float(output.get("avg_prvs", output.get("ccld_unpr", 0)) or 0) or None
+        if not output:
+            status = "pending"
+        elif cncl_yn == "Y":
+            status = "canceled"
+        elif rjct_qty > 0:
+            status = "rejected"
+        elif rmn_qty == 0 and tot_ccld_qty > 0:
+            status = "filled"
+        elif tot_ccld_qty > 0:
+            status = "partially_filled"
+        else:
+            status = "pending"
+    else:
+        output = data.get("output", {})
+        if isinstance(output, list):
+            output = output[0] if output else {}
+
+        status_raw = output.get("ord_stts", output.get("odno_stts", ""))
+        status = _map_order_status(status_raw)
+        tot_ccld_qty = float(output.get("tot_ccld_qty", output.get("ccld_qty", 0)) or 0)
+        filled_price = float(output.get("avg_prvs", output.get("ccld_unpr", 0)) or 0) or None
 
     return {
         "broker_order_id": broker_order_id,
         "status": status,
         "filled_avg_price": filled_price if filled_price else None,
-        "filled_qty": filled_qty if filled_qty else None,
+        "filled_qty": tot_ccld_qty if tot_ccld_qty else None,
     }
 
 
@@ -597,6 +634,190 @@ def get_filled_orders(limit: int = 50) -> list[dict]:
             }
         )
     return result
+
+
+def fetch_kr_fills(start_date: str, end_date: str) -> list[dict]:
+    """국내 주식 날짜 범위 체결 내역 조회 (페이지네이션 포함).
+
+    start_date / end_date: 'YYYYMMDD' 형식
+    Returns: [{broker_order_id, ticker, side, qty, price, executed_at (ISO8601), market, currency}]
+    """
+    s = get_settings()
+    cano, acnt_cd = _parse_account(s.kis_account_no)
+    tr_id = _KR_DAILY_CCLD_PAPER if s.kis_paper else _KR_DAILY_CCLD_REAL
+
+    result: list[dict] = []
+    ctx_fk = ""
+    ctx_nk = ""
+    MAX_PAGES = 50
+
+    for _ in range(MAX_PAGES):
+        kr_params = {
+            "CANO": cano,
+            "ACNT_PRDT_CD": acnt_cd,
+            "INQR_STRT_DT": start_date,
+            "INQR_END_DT": end_date,
+            "SLL_BUY_DVSN_CD": "00",
+            "INQR_DVSN": "01",
+            "PDNO": "",
+            "ORD_GNO_BRNO": "",
+            "ODNO": "",
+            "CCLD_DVSN": "01",
+            "INQR_DVSN_1": "",
+            "INQR_DVSN_3": "00",
+            "EXCG_ID_DVSN_CD": "KRX",
+            "CTX_AREA_FK100": ctx_fk,
+            "CTX_AREA_NK100": ctx_nk,
+        }
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            if attempt > 0:
+                logger.info(f"fetch-kr-fills 재시도 {attempt}/2 (1s 대기)")
+                time.sleep(1)
+            resp = httpx.get(
+                f"{_base_url()}/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+                headers=_headers(tr_id),
+                params=kr_params,
+                timeout=10,
+            )
+            if resp.status_code >= 500:
+                last_exc = RuntimeError(f"HTTP {resp.status_code}")
+                continue
+            resp.raise_for_status()
+            break
+        else:
+            raise last_exc  # type: ignore[misc]
+        body = resp.json()
+        data = _check_response(body, "fetch-kr-fills")
+
+        for item in data.get("output1", []):
+            filled_qty = float(item.get("tot_ccld_qty", 0) or 0)
+            filled_price = float(item.get("avg_prvs", 0) or 0)
+            if filled_qty <= 0 or filled_price <= 0:
+                continue
+            ord_dt = item.get("ord_dt", "")
+            ord_tmd = item.get("ord_tmd", "")
+            executed_at = _normalize_kis_datetime(ord_dt, ord_tmd)
+            result.append(
+                {
+                    "broker_order_id": item.get("odno", ""),
+                    "ticker": item.get("pdno", ""),
+                    "side": "buy" if item.get("sll_buy_dvsn_cd") == "02" else "sell",
+                    "qty": filled_qty,
+                    "price": filled_price,
+                    "executed_at": executed_at,
+                    "market": "KR",
+                    "currency": "KRW",
+                }
+            )
+
+        tr_cont = body.get("tr_cont", "")
+        ctx_fk = body.get("ctx_area_fk100", "")
+        ctx_nk = body.get("ctx_area_nk100", "")
+        if tr_cont not in ("M", "F"):
+            break
+        time.sleep(0.1)
+
+    return result
+
+
+def fetch_us_fills(start_date: str, end_date: str) -> list[dict]:
+    """해외(미국) 주식 날짜 범위 체결 내역 조회 (페이지네이션 포함).
+
+    start_date / end_date: 'YYYYMMDD' 형식
+    Returns: [{broker_order_id, ticker, side, qty, price, executed_at (ISO8601), market, currency}]
+    """
+    s = get_settings()
+    cano, acnt_cd = _parse_account(s.kis_account_no)
+    tr_id = _US_ORDER_INQUIRE_PAPER if s.kis_paper else _US_ORDER_INQUIRE_REAL
+
+    result: list[dict] = []
+    ctx_nk = ""
+    MAX_PAGES = 50
+
+    for _ in range(MAX_PAGES):
+        us_params = {
+            "CANO": cano,
+            "ACNT_PRDT_CD": acnt_cd,
+            "OVRS_EXCG_CD": _DEFAULT_US_EXCHANGE,
+            "PDNO": "",
+            "ORD_STRT_DT": start_date,
+            "ORD_END_DT": end_date,
+            "SLL_BUY_DVSN": "00",
+            "CTX_AREA_NK200": ctx_nk,
+            "CTX_AREA_FK200": "",
+        }
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            if attempt > 0:
+                logger.info(f"fetch-us-fills 재시도 {attempt}/2 (1s 대기)")
+                time.sleep(1)
+            resp = httpx.get(
+                f"{_base_url()}/uapi/overseas-stock/v1/trading/inquire-ccnl",
+                headers=_headers(tr_id),
+                params=us_params,
+                timeout=10,
+            )
+            if resp.status_code >= 500:
+                last_exc = RuntimeError(f"HTTP {resp.status_code}")
+                continue
+            resp.raise_for_status()
+            break
+        else:
+            raise last_exc  # type: ignore[misc]
+        body = resp.json()
+        data = _check_response(body, "fetch-us-fills")
+
+        for item in data.get("output", []):
+            filled_qty = float(item.get("ft_ccld_qty", 0) or 0)
+            filled_price = float(item.get("ft_ccld_unpr3", 0) or 0)
+            if filled_qty <= 0 or filled_price <= 0:
+                continue
+            ord_dt = item.get("ord_dt", "")
+            ord_tmd = item.get("ord_tmd", "")
+            executed_at = _normalize_kis_datetime(ord_dt, ord_tmd)
+            result.append(
+                {
+                    "broker_order_id": item.get("odno", ""),
+                    "ticker": item.get("pdno", ""),
+                    "side": "buy" if item.get("sll_buy_dvsn_cd") == "02" else "sell",
+                    "qty": filled_qty,
+                    "price": filled_price,
+                    "executed_at": executed_at,
+                    "market": "US",
+                    "currency": "USD",
+                }
+            )
+
+        tr_cont = body.get("tr_cont", "")
+        ctx_nk = body.get("ctx_area_nk200", "")
+        if tr_cont not in ("M", "F"):
+            break
+        time.sleep(0.1)
+
+    return result
+
+
+def _normalize_kis_datetime(ord_dt: str, ord_tmd: str) -> str:
+    """KIS ord_dt(YYYYMMDD) + ord_tmd(HHMMSS) → ISO8601 KST 문자열.
+
+    둘 다 없으면 현재 시각 반환.
+    """
+    if len(ord_dt) == 8 and len(ord_tmd) == 6:
+        try:
+            dt = datetime(
+                int(ord_dt[:4]),
+                int(ord_dt[4:6]),
+                int(ord_dt[6:8]),
+                int(ord_tmd[:2]),
+                int(ord_tmd[2:4]),
+                int(ord_tmd[4:6]),
+                tzinfo=_KST,
+            )
+            return dt.isoformat()
+        except ValueError:
+            pass
+    return datetime.now(tz=_KST).isoformat()
 
 
 # ---------------------------------------------------------------------------

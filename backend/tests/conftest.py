@@ -96,10 +96,12 @@ def sample_strategy():
 
 @pytest.fixture
 def db_holding(_init_db):
-    """Holding + Transaction 을 real DB에 생성하고 teardown에서 제거."""
+    """Holding을 real DB에 생성하고 teardown에서 제거."""
     from app.infrastructure import repository as db
 
-    holding = db.upsert_holding("TESTHOLD", 8.0, 200.0)
+    positions = [{"ticker": "TESTHOLD", "qty": 8.0, "avg_entry_price": 200.0, "market": "US", "currency": "USD"}]
+    holdings = db.rebuild_holdings_from_broker(positions)
+    holding = next(h for h in holdings if h["ticker"] == "TESTHOLD")
     yield holding
     db.remove_holding("TESTHOLD")
 

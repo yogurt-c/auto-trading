@@ -597,51 +597,99 @@ def _place_order_locked(
 # ---------------------------------------------------------------------------
 
 
-def sync_pending_orders() -> int:
-    """미체결(partially_filled / accepted) 주문을 KIS에서 현재 상태로 갱신. 업데이트된 건수 반환."""
+def repair_realized_trades_from_db() -> dict:
+    """DB에 이미 있는 데이터만으로 누락된 realized_trades를 복구한다.
+
+    trade_logs에 side=sell, status=filled, filled_price/avg_cost_snapshot 모두 있는데
+    realized_trades가 없는 행을 찾아 직접 생성한다. KIS API 호출 없음.
+    Returns: {repaired: int, skipped_no_cost: int}
+    """
+    orphans = db.list_orphan_sell_logs()
+    repaired = 0
+    skipped = 0
+    for log in orphans:
+        filled_price = log.get("filled_price")
+        avg_cost = log.get("avg_cost_snapshot")
+        qty = log.get("qty", 0)
+        if not filled_price or not avg_cost or not qty:
+            skipped += 1
+            continue
+        pnl = (filled_price - avg_cost) * qty
+        pnl_pct = round((pnl / (avg_cost * qty) * 100) if avg_cost else 0.0, 2)
+        action, _ = db.upsert_realized_trade_by_trade_log_id(
+            trade_log_id=log["id"],
+            ticker=log["ticker"],
+            qty=qty,
+            sell_price=filled_price,
+            avg_cost=avg_cost,
+            realized_pnl=pnl,
+            realized_pnl_pct=pnl_pct,
+            currency=log.get("currency", "USD"),
+            strategy_id=log.get("strategy_id"),
+        )
+        if action == "inserted":
+            repaired += 1
+            logger.info(
+                f"realized_trade repaired from DB: {log['ticker']} "
+                f"trade_log_id={log['id']} pnl={pnl:.2f}"
+            )
+    if repaired or skipped:
+        logger.info(f"repair_realized_trades_from_db: repaired={repaired} skipped={skipped}")
+    return {"repaired": repaired, "skipped_no_cost": skipped}
+
+
+def sync_pending_orders() -> dict:
+    """미체결(partially_filled / accepted) 주문을 KIS에서 현재 상태로 갱신.
+
+    Returns: {updated: int, still_pending: int, errors: list[dict]}
+    """
     logs = db.get_pending_fill_logs()
     updated = 0
+    still_pending = 0
+    errors: list[dict] = []
+
     for log in logs:
         try:
             order = kis_client.get_order(
                 log["broker_order_id"],
                 market=log.get("market", "US"),
+                lookback_days=7,
             )
             new_status = order["status"]
-            if new_status != "partially_filled":
-                filled_price = order.get("filled_avg_price")
-                db.update_trade_log_status(
-                    log["id"],
-                    status=new_status,
-                    filled_price=filled_price,
-                )
-                logger.info(
-                    f"trade_log {log['id']} {log['ticker']} {log['side']}: "
-                    f"partially_filled → {new_status}"
-                )
 
-                # 매도 체결 시 realized_trade 생성
+            if new_status == "partially_filled":
+                still_pending += 1
+                continue
+
+            filled_price = order.get("filled_avg_price")
+            db.update_trade_log_status(log["id"], status=new_status, filled_price=filled_price)
+            logger.info(
+                f"trade_log {log['id']} {log['ticker']} {log['side']}: accepted → {new_status}"
+            )
+
+            if new_status == "filled" and log["side"].lower() == "sell":
                 avg_cost_snap = log.get("avg_cost_snapshot")
-                if (
-                    new_status == "filled"
-                    and log["side"].lower() == "sell"
-                    and avg_cost_snap is None
-                ):
-                    logger.error(
-                        f"realized_trade 생성 불가: trade_log {log['id']} {log['ticker']} "
-                        f"avg_cost_snapshot=None (place_order 시점 holdings 누락 추정)"
+
+                # avg_cost_snapshot 없을 경우 현재 holdings에서 폴백
+                if avg_cost_snap is None:
+                    holdings = db.get_all_holdings()
+                    holding = next(
+                        (h for h in holdings if h["ticker"] == log["ticker"].upper()), None
                     )
-                if (
-                    new_status == "filled"
-                    and log["side"].lower() == "sell"
-                    and filled_price is not None
-                    and filled_price > 0
-                    and avg_cost_snap is not None
-                ):
+                    if holding:
+                        avg_cost_snap = holding["avg_price"]
+                        logger.warning(
+                            f"avg_cost_snapshot fallback from holdings: "
+                            f"trade_log {log['id']} {log['ticker']} cost={avg_cost_snap}"
+                        )
+
+                if filled_price and filled_price > 0 and avg_cost_snap:
                     qty = log["qty"]
                     pnl = (filled_price - avg_cost_snap) * qty
-                    pnl_pct = round(pnl / (avg_cost_snap * qty) * 100, 2)
-                    db.add_realized_trade(
+                    pnl_pct = round(
+                        (pnl / (avg_cost_snap * qty) * 100) if avg_cost_snap else 0.0, 2
+                    )
+                    action, _ = db.upsert_realized_trade_by_trade_log_id(
                         trade_log_id=log["id"],
                         ticker=log["ticker"],
                         qty=qty,
@@ -653,14 +701,168 @@ def sync_pending_orders() -> int:
                         strategy_id=log.get("strategy_id"),
                     )
                     logger.info(
-                        f"realized_trade (deferred): {log['ticker']} qty={qty} "
+                        f"realized_trade (deferred/{action}): {log['ticker']} qty={qty} "
                         f"sell={filled_price} cost={avg_cost_snap} pnl={pnl:.2f}"
                     )
+                else:
+                    logger.error(
+                        f"realized_trade 생성 불가: trade_log {log['id']} {log['ticker']} "
+                        f"filled_price={filled_price} avg_cost_snapshot={avg_cost_snap}"
+                    )
 
-                updated += 1
+                # fill 확인 후 holdings 동기화
+                _sync_from_broker()
+
+            updated += 1
         except Exception as e:
-            logger.warning(f"sync order {log.get('broker_order_id')} failed: {e}")
-    return updated
+            errors.append(
+                {
+                    "trade_log_id": log.get("id"),
+                    "broker_order_id": log.get("broker_order_id"),
+                    "ticker": log.get("ticker"),
+                    "market": log.get("market"),
+                    "error": str(e),
+                }
+            )
+            logger.warning(
+                f"sync order failed: trade_log_id={log.get('id')} "
+                f"broker_order_id={log.get('broker_order_id')} "
+                f"ticker={log.get('ticker')} market={log.get('market')} error={e}"
+            )
+
+    return {"updated": updated, "still_pending": still_pending, "errors": errors}
+
+
+def reconcile_fills(lookback_days: int = 30) -> dict:
+    """KIS에서 KR+US 날짜 범위 체결 내역을 가져와 누락된 realized_trades를 복구한다.
+
+    단계:
+    1. DB 자가 수리 (KIS 호출 없음)
+    2. sync_pending_orders (미결 주문 상태 갱신)
+    3. KIS KR 체결 내역 pull
+    4. KIS US 체결 내역 pull
+    5. 매도 체결만 upsert
+
+    Returns: {db_repaired, kr_synced, us_synced, pending_resolved, pending_remaining, errors}
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    lookback_days = min(lookback_days, 90)
+    KST = ZoneInfo("Asia/Seoul")
+    today = datetime.now(tz=KST)
+    end_date = today.strftime("%Y%m%d")
+    start_date = (today - timedelta(days=lookback_days)).strftime("%Y%m%d")
+
+    errors: list[dict] = []
+
+    # 1단계: DB 자가 수리
+    repair_result = repair_realized_trades_from_db()
+    db_repaired = repair_result["repaired"]
+
+    # 2단계: pending 주문 동기화
+    sync_result = sync_pending_orders()
+    pending_resolved = sync_result["updated"]
+    pending_remaining = sync_result["still_pending"]
+    errors.extend([{"source": "sync_pending", **e} for e in sync_result["errors"]])
+
+    # 3단계: KR 체결 내역 pull
+    kr_synced = 0
+    try:
+        kr_fills = kis_client.fetch_kr_fills(start_date, end_date)
+        for fill in kr_fills:
+            if fill["side"] != "sell":
+                continue
+            # broker_order_id로 trade_log 찾기
+            pending_log = _find_trade_log_by_broker_order_id(fill["broker_order_id"])
+            if pending_log is None:
+                continue
+            avg_cost = pending_log.get("avg_cost_snapshot")
+            if not avg_cost:
+                continue
+            qty = fill["qty"]
+            price = fill["price"]
+            pnl = (price - avg_cost) * qty
+            pnl_pct = round((pnl / (avg_cost * qty) * 100) if avg_cost else 0.0, 2)
+            action, _ = db.upsert_realized_trade_by_trade_log_id(
+                trade_log_id=pending_log["id"],
+                ticker=fill["ticker"],
+                qty=qty,
+                sell_price=price,
+                avg_cost=avg_cost,
+                realized_pnl=pnl,
+                realized_pnl_pct=pnl_pct,
+                currency="KRW",
+                strategy_id=pending_log.get("strategy_id"),
+            )
+            if action == "inserted":
+                kr_synced += 1
+    except Exception as e:
+        errors.append({"source": "kr_fills", "error": str(e)})
+        logger.error(f"KR fill reconcile failed: {e}")
+
+    # 4단계: US 체결 내역 pull
+    us_synced = 0
+    try:
+        us_fills = kis_client.fetch_us_fills(start_date, end_date)
+        for fill in us_fills:
+            if fill["side"] != "sell":
+                continue
+            pending_log = _find_trade_log_by_broker_order_id(fill["broker_order_id"])
+            if pending_log is None:
+                continue
+            avg_cost = pending_log.get("avg_cost_snapshot")
+            if not avg_cost:
+                continue
+            qty = fill["qty"]
+            price = fill["price"]
+            pnl = (price - avg_cost) * qty
+            pnl_pct = round((pnl / (avg_cost * qty) * 100) if avg_cost else 0.0, 2)
+            action, _ = db.upsert_realized_trade_by_trade_log_id(
+                trade_log_id=pending_log["id"],
+                ticker=fill["ticker"],
+                qty=qty,
+                sell_price=price,
+                avg_cost=avg_cost,
+                realized_pnl=pnl,
+                realized_pnl_pct=pnl_pct,
+                currency="USD",
+                strategy_id=pending_log.get("strategy_id"),
+            )
+            if action == "inserted":
+                us_synced += 1
+    except Exception as e:
+        errors.append({"source": "us_fills", "error": str(e)})
+        logger.error(f"US fill reconcile failed: {e}")
+
+    logger.info(
+        f"reconcile_fills: db_repaired={db_repaired} kr={kr_synced} us={us_synced} "
+        f"pending_resolved={pending_resolved} errors={len(errors)}"
+    )
+    return {
+        "db_repaired": db_repaired,
+        "kr_synced": kr_synced,
+        "us_synced": us_synced,
+        "pending_resolved": pending_resolved,
+        "pending_remaining": pending_remaining,
+        "errors": errors,
+    }
+
+
+def _find_trade_log_by_broker_order_id(broker_order_id: str) -> dict | None:
+    """broker_order_id로 trade_log 조회 (없으면 None)."""
+    if not broker_order_id:
+        return None
+    from sqlalchemy import select
+
+    from app.infrastructure.database import get_session
+    from app.infrastructure.models import TradeLog
+
+    with get_session() as s:
+        row = s.execute(
+            select(TradeLog).where(TradeLog.broker_order_id == broker_order_id)
+        ).scalar_one_or_none()
+        return row.to_dict() if row else None
 
 
 # ---------------------------------------------------------------------------
