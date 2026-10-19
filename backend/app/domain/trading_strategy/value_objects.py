@@ -66,3 +66,12 @@ class EvaluationResult(BaseModel):
     holding_avg_price: float | None = None
     current_pnl_pct: float | None = None
     note: str | None = None
+
+
+class GateDecision(BaseModel):
+    """EntryGate 결과 — 진입 신호를 실제 매수로 이어갈지 여부."""
+
+    model_config = ConfigDict(frozen=True)
+
+    entry_allowed: bool
+    blocked_reason: str | None = None

@@ -85,30 +85,38 @@ KR은 한국 금융권 관행(거래일 기준), US는 캘린더일 기준입니
 
 ---
 
-## 2. Application 레이어: 게이트 (`tools.py:286-327`)
+## 2. 게이트: `EntryGate` (`services.py`, Domain)
 
-도메인 결과에 두 가지 비즈니스 규칙을 추가로 적용합니다.
+진입 신호에 비즈니스 규칙 두 가지를 적용하는 순수 함수입니다. I/O(현재 보유 평가액 조회)는
+호출부가 하고 `position_value`로 주입합니다. 서버에서는 `tools.evaluate_strategy()`가 호출하며,
+research 백테스트와 Android 엔진도 같은 규칙을 씁니다 (`shared/fixtures/gate` 참고).
+
+```python
+decision = EntryGate().apply(strategy, result, position_value)
+# decision.entry_allowed: bool, decision.blocked_reason: str | None
+```
 
 ### 게이트 1 — max_position 한도 초과
 
-```python
-if current_value >= max_position:
-    result_dict["entry_triggered"] = False  # 주문 차단
-```
-
-통화 단위는 전략의 `currency` 필드 기준 (KRW 또는 USD). 불일치 시 경고 로그.
+`position_value >= max_position`이면 차단. 통화 단위는 전략의 `currency` 기준 (KRW 또는 USD).
 
 ### 게이트 2 — signal_score 미달
 
-```python
-# 진입 조건이 2개 이상인 전략에만 적용
-if entry_cond_count >= 2 and signal_score < 0.5:
-    result_dict["entry_triggered"] = False  # 주문 차단
-```
+**설정된** 진입 조건이 2개 이상이고 `signal_score < 0.5`이면 차단. 조건 수는
+`count_configured_entry_conditions()`로 계산해 signal_score 분모와 같은 기준을 씁니다
+(이전에는 평가된 조건 수를 세서 데이터 미수신 시 게이트가 풀리는 불일치가 있었음).
 
-진입 조건이 1개인 전략은 `entry_triggered` 값만으로 판단 (score 게이트 생략).
+> 조건이 정확히 2개인 전략은 1개만 발동해도 0.5라 통과합니다 — 사실상 OR입니다.
 
----
+### 주문 수량 — `OrderSizer`
+
+| 방향 | 규칙 |
+|------|------|
+| 매수 | `min(max_position / 3, max_position - position_value, 가용현금) // 가격` (정수 주) |
+| 매도 | `ceil(보유수량 * sell_ratio)` — 1주 보유 시에도 청산 가능하도록 올림 |
+
+서버의 LLM trade-executor는 아직 자체 판단으로 수량을 정하며(스케줄러는 Android 전환 시 폐기),
+`OrderSizer`는 백테스트와 Android 엔진의 기준 원본입니다.
 
 ## 3. KIS 신호 강도 티어
 

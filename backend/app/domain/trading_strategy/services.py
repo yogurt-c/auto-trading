@@ -2,17 +2,37 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .value_objects import (
     EvaluationResult,
+    GateDecision,
     MarketData,
     ValidationSeverity,
     ValidationWarning,
 )
 
 _KST = ZoneInfo("Asia/Seoul")
+
+
+def count_configured_entry_conditions(strategy: dict) -> int:
+    """전략에 설정된 진입 조건 수 — 시장 데이터 수신 여부와 무관하다.
+
+    signal_score 분모와 EntryGate의 조건 수 판정이 같은 기준을 쓰도록 한 곳에서 계산한다.
+    """
+    return sum(
+        [
+            strategy.get("entry_price_drop_pct") is not None,
+            strategy.get("entry_rsi_below") is not None,
+            bool(strategy.get("entry_bb_lower_touch")),
+            bool(strategy.get("entry_macd_hist_positive")),
+            strategy.get("entry_disparity_below") is not None,
+            strategy.get("entry_volume_surge") is not None,
+            strategy.get("entry_sma_cross") is not None,
+        ]
+    )
 
 
 class StrategyValidator:
@@ -349,17 +369,7 @@ class StrategyEvaluator:
 
         # signal_score: 발동된 진입 조건 수 / 전체 설정된 진입 조건 수
         # 데이터 미수신으로 평가 불가한 조건은 미발동(0)으로 산입 — 분모는 평가 가능 수가 아닌 설정 수 기준
-        configured_entry_count = sum(
-            [
-                strategy.get("entry_price_drop_pct") is not None,
-                strategy.get("entry_rsi_below") is not None,
-                bool(strategy.get("entry_bb_lower_touch")),
-                bool(strategy.get("entry_macd_hist_positive")),
-                strategy.get("entry_disparity_below") is not None,
-                strategy.get("entry_volume_surge") is not None,
-                strategy.get("entry_sma_cross") is not None,
-            ]
-        )
+        configured_entry_count = count_configured_entry_conditions(strategy)
         if configured_entry_count > 0:
             triggered_count = sum(
                 1 for k, v in conditions.items() if k.startswith("entry_") and v["triggered"]
@@ -383,6 +393,92 @@ class StrategyEvaluator:
             current_pnl_pct=current_pnl_pct,
             note=note,
         )
+
+
+class EntryGate:
+    """진입 신호에 비즈니스 게이트(포지션 한도, signal_score)를 적용 — no I/O.
+
+    호출부가 현재 포지션 평가액을 조회(I/O)해 주입한다.
+    """
+
+    MIN_SIGNAL_SCORE = 0.5
+    MIN_CONDITIONS_FOR_SCORE_GATE = 2
+
+    def apply(
+        self,
+        strategy: dict,
+        result: EvaluationResult,
+        position_value: float,
+    ) -> GateDecision:
+        """진입 신호가 실제 매수로 이어질 수 있는지 판정한다.
+
+        Args:
+            strategy: strategy dict (max_position, entry_* 조건)
+            result: StrategyEvaluator.evaluate() 결과
+            position_value: 현재 보유 평가액 (strategy currency 단위, 미보유면 0)
+        """
+        if not result.entry_triggered:
+            return GateDecision(entry_allowed=False)
+
+        max_position = strategy.get("max_position")
+        if max_position and position_value >= max_position:
+            return GateDecision(
+                entry_allowed=False,
+                blocked_reason=(
+                    f"포지션 한도 초과로 매수 차단: "
+                    f"현재 {position_value:,.0f} >= 한도 {max_position:,.0f}"
+                ),
+            )
+
+        configured = count_configured_entry_conditions(strategy)
+        if (
+            configured >= self.MIN_CONDITIONS_FOR_SCORE_GATE
+            and result.signal_score is not None
+            and result.signal_score < self.MIN_SIGNAL_SCORE
+        ):
+            return GateDecision(
+                entry_allowed=False,
+                blocked_reason=(
+                    f"signal_score {result.signal_score:.2f} < {self.MIN_SIGNAL_SCORE} — "
+                    f"진입 조건 {configured}개 중 미달로 매수 차단"
+                ),
+            )
+
+        return GateDecision(entry_allowed=True)
+
+
+class OrderSizer:
+    """주문 수량 규칙 — no I/O. 국내 주식 기준 정수 주.
+
+    매수: 1회에 max_position의 1/BUY_TRANCHES씩, 한도·가용 현금을 넘지 않게 분할 매수.
+    매도: 보유 수량 * sell_ratio를 올림 — 1주 보유 시 0주 매도로 청산이 막히지 않도록.
+    """
+
+    BUY_TRANCHES = 3
+
+    def buy_qty(
+        self,
+        max_position: float,
+        position_value: float,
+        price: float,
+        available_cash: float,
+    ) -> int:
+        if price <= 0 or max_position <= 0:
+            return 0
+        budget = min(
+            max_position / self.BUY_TRANCHES,
+            max_position - position_value,
+            available_cash,
+        )
+        if budget <= 0:
+            return 0
+        return int(budget // price)
+
+    def sell_qty(self, shares: int, sell_ratio: float | None) -> int:
+        if shares <= 0:
+            return 0
+        ratio = 1.0 if sell_ratio is None else sell_ratio
+        return min(shares, math.ceil(shares * ratio))
 
 
 class DcaScheduleChecker:

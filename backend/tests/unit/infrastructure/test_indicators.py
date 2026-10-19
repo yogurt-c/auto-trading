@@ -6,6 +6,8 @@ import pandas as pd
 import pytest
 
 from app.infrastructure.indicators import (
+    INDICATOR_LOOKBACK_BARS,
+    build_market_data,
     calc_atr,
     calc_bollinger,
     calc_disparity,
@@ -62,6 +64,30 @@ class TestCalcRsi:
         result = calc_rsi(closes)
         assert result is not None
         assert result < 10
+
+    # Wilder 원서 예제 입력. StockCharts 표는 중간값을 반올림해 70.53이지만 정밀 계산은 70.464
+    _WILDER_CLOSES = (
+        44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42,
+        45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28,
+    )  # fmt: skip
+
+    def test_wilder_first_value_uses_sma_seed(self):
+        assert calc_rsi(_make_closes(self._WILDER_CLOSES)) == pytest.approx(70.4641, abs=1e-4)
+
+    def test_wilder_smoothing_matches_seeded_ewm(self):
+        # 독립 구현: 첫 14개 변화량 평균을 시드로 둔 alpha=1/14 지수평활
+        closes = _make_closes([*self._WILDER_CLOSES, 46.00, 46.03, 46.41, 46.22, 45.64])
+        delta = closes.diff().dropna()
+
+        def smoothed(x: pd.Series) -> float:
+            seeded = pd.concat([pd.Series([x.iloc[:14].mean()]), x.iloc[14:]])
+            return float(seeded.ewm(alpha=1 / 14, adjust=False).mean().iloc[-1])
+
+        rs = smoothed(delta.clip(lower=0)) / smoothed(-delta.clip(upper=0))
+        assert calc_rsi(closes) == pytest.approx(100 - 100 / (1 + rs), abs=1e-9)
+
+    def test_flat_series_returns_none(self):
+        assert calc_rsi(_make_closes([100.0] * 30)) is None
 
 
 # ---------------------------------------------------------------------------
@@ -211,3 +237,46 @@ class TestCalcVolumeRatio:
     def test_insufficient_data_returns_none(self):
         volumes = pd.Series([1000.0] * 5)
         assert calc_volume_ratio(volumes, period=20) is None
+
+
+# ---------------------------------------------------------------------------
+# build_market_data
+# ---------------------------------------------------------------------------
+
+
+def _ohlcv(n: int) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    idx = pd.bdate_range("2020-01-01", periods=n)
+    closes = pd.Series([100 + (i % 17) - (i % 5) * 0.7 + i * 0.05 for i in range(n)], index=idx)
+    return (
+        closes * 1.01,
+        closes * 0.99,
+        closes,
+        pd.Series([1000.0 + i % 7 * 100 for i in range(n)], index=idx),
+    )
+
+
+class TestBuildMarketData:
+    def test_uses_only_last_lookback_bars(self):
+        highs, lows, closes, volumes = _ohlcv(INDICATOR_LOOKBACK_BARS + 150)
+        full = build_market_data("X", "KR", "KRW", highs, lows, closes, volumes)
+        tail = build_market_data(
+            "X",
+            "KR",
+            "KRW",
+            highs.tail(INDICATOR_LOOKBACK_BARS),
+            lows.tail(INDICATOR_LOOKBACK_BARS),
+            closes.tail(INDICATOR_LOOKBACK_BARS),
+            volumes.tail(INDICATOR_LOOKBACK_BARS),
+        )
+        assert full == tail
+
+    def test_kr_high_30d_uses_last_30_bars(self):
+        highs, lows, closes, volumes = _ohlcv(100)
+        md = build_market_data("X", "KR", "KRW", highs, lows, closes, volumes)
+        assert md.high_30d == pytest.approx(float(highs.tail(30).max()))
+        assert md.current_price == pytest.approx(float(closes.iloc[-1]))
+
+    def test_empty_series_raises(self):
+        empty = pd.Series([], dtype=float)
+        with pytest.raises(ValueError, match="No price data"):
+            build_market_data("X", "KR", "KRW", empty, empty, empty, empty)

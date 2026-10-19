@@ -7,20 +7,40 @@
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 import pandas as pd
 
+from app.domain.trading_strategy.value_objects import MarketData
+
+# 지표 계산에 쓰는 완결 일봉 수. EMA·MACD·RSI는 입력 길이에 따라 값이 달라지므로
+# 서버·백테스트·Android가 같은 길이를 써야 같은 신호가 나온다 (약 1년 거래일).
+INDICATOR_LOOKBACK_BARS = 250
+
 
 def calc_rsi(closes: pd.Series, period: int = 14) -> float | None:
-    """Wilder RSI. 데이터 부족 시 None 반환."""
+    """Wilder RSI. 데이터 부족 시 None 반환.
+
+    첫 평균은 최초 period개 변화량의 단순평균, 이후 avg = (avg * (period-1) + x) / period.
+    입력 길이에 따라 값이 달라지므로 호출부는 INDICATOR_LOOKBACK_BARS로 길이를 고정한다.
+    Android 포팅 시 이 순서를 그대로 따른다 (shared/fixtures/indicators 참고).
+    """
     if len(closes) < period + 1:
         return None
-    delta = closes.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = (-delta.clip(upper=0)).rolling(period).mean()
-    rs = gain / loss
-    rsi_series = 100 - 100 / (1 + rs)
-    val = float(rsi_series.iloc[-1])
+    values = [float(v) for v in closes]
+    deltas = [values[i] - values[i - 1] for i in range(1, len(values))]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for gain, loss in zip(gains[period:], losses[period:], strict=True):
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+
+    if avg_loss == 0:
+        return None if avg_gain == 0 else 100.0
+    val = 100 - 100 / (1 + avg_gain / avg_loss)
     return None if math.isnan(val) else val
 
 
@@ -140,3 +160,59 @@ def calc_volume_ratio(volumes: pd.Series, period: int = 20) -> float | None:
         return None
     val = float(volumes.iloc[-1]) / mean_vol
     return None if math.isnan(val) else val
+
+
+def build_market_data(
+    ticker: str,
+    market: Literal["KR", "US"],
+    currency: str,
+    highs: pd.Series,
+    lows: pd.Series,
+    closes: pd.Series,
+    volumes: pd.Series,
+) -> MarketData:
+    """일봉 OHLCV(날짜 인덱스, 오래된 순)로 기술지표를 계산해 MarketData를 만든다.
+
+    마지막 INDICATOR_LOOKBACK_BARS개 봉만 사용하며, 마지막 봉의 종가가 current_price가 된다.
+    시세 조회(I/O)와 분리된 순수 계산 — fetch_market_data와 research 백테스트가 공유한다.
+    """
+    if closes.empty:
+        raise ValueError(f"No price data for {ticker}")
+
+    highs = highs.tail(INDICATOR_LOOKBACK_BARS)
+    lows = lows.tail(INDICATOR_LOOKBACK_BARS)
+    closes = closes.tail(INDICATOR_LOOKBACK_BARS)
+    volumes = volumes.tail(INDICATOR_LOOKBACK_BARS)
+
+    # 30일 고점: KR은 거래일 기준 tail(30), US는 최근 30 캘린더일 날짜 필터
+    if market == "KR":
+        high_30d = float(highs.tail(30).max())
+    else:
+        cutoff = closes.index[-1] - pd.Timedelta(days=30)
+        high_30d = float(highs[highs.index >= cutoff].max())
+
+    # MACD, 볼린저는 중간 결과를 변수에 저장해 재계산 방지
+    macd_line, macd_signal, macd_hist = calc_macd(closes)
+    bb_upper, bb_middle, bb_lower = calc_bollinger(closes)
+
+    return MarketData(
+        ticker=ticker,
+        current_price=float(closes.iloc[-1]),
+        currency=currency,
+        market=market,
+        high_30d=high_30d,
+        rsi_14=calc_rsi(closes),
+        sma_20=calc_sma(closes, 20),
+        sma_60=calc_sma(closes, 60),
+        ema_12=calc_ema(closes, 12),
+        ema_26=calc_ema(closes, 26),
+        macd_line=macd_line,
+        macd_signal=macd_signal,
+        macd_hist=macd_hist,
+        bb_upper=bb_upper,
+        bb_middle=bb_middle,
+        bb_lower=bb_lower,
+        disparity_20=calc_disparity(closes),
+        atr_14=calc_atr(highs, lows, closes),
+        volume_ratio_20=calc_volume_ratio(volumes),
+    )
