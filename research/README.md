@@ -43,3 +43,20 @@ KRX는 [openapi.krx.co.kr](https://openapi.krx.co.kr)에서 인증키 발급 후
 .venv/bin/python scripts/fetch_data.py dart
 .venv/bin/python scripts/fetch_data.py bench
 ```
+
+## 실행 (`scripts/run_backtest.py`)
+
+```bash
+.venv/bin/python scripts/run_backtest.py train  # 첫 실행 시 MarketData 사전 계산 (병렬, 수 분)
+.venv/bin/python scripts/run_backtest.py test   # 학습 게이트 통과 시에만, 단 1회
+```
+
+학습 단계 (`pipeline.run_train`):
+1. 기준 전략 B1·B2·B3, 비교 대상 = B1·B3 중 Sharpe 높은 쪽
+2. S0(프리셋) → S1(국면 필터) → S2(공시 거부권)를 하나씩 붙여 채택 규칙으로 판정
+3. 채택된 필터 위에서 튜닝 격자 36개 → 학습 Sharpe 최고 조합
+4. 최종 후보 = S 계열 vs 튜닝 계열 중 학습 Sharpe가 높은 쪽 (튜닝이면 P7 값 기록)
+5. 학습 게이트 T1 불통과 시 검증 구간을 쓰지 않고 지수 정기 매수로 결론
+
+검증 단계는 실행 직전에 `reports/TEST_RUN.lock`을 만들고, `config/`에 커밋되지 않은 변경이 있으면 거부한다.
+결과는 `reports/*_report.json`과 `test_equity.csv` (커밋 대상 — 원본 시세는 포함하지 않음).

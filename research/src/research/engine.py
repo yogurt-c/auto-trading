@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -20,7 +21,6 @@ from app.domain.trading_strategy.services import EntryGate, OrderSizer, Strategy
 from research.costs import CostModel
 from research.market_data import to_market_data
 from research.portfolio import Fill, Portfolio
-from research.universe import members_on
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class MarketInputs:
     opens: pd.DataFrame  # date x code, 원주가
     closes: pd.DataFrame
     factors: pd.DataFrame  # 분할·권리락 계수 (이벤트 없으면 1.0)
-    market_data: dict[tuple[str, pd.Timestamp], dict]
+    market_data: Mapping[tuple[str, pd.Timestamp], dict]  # dict 또는 MarketDataStore
     universe: pd.DataFrame  # rebalance_date, code, rank
     regime_ok: pd.Series  # date → 지수 > SMA200 (해당일 종가 기준)
     veto_until: dict[str, list[tuple[pd.Timestamp, pd.Timestamp]]]  # code → 진입 금지 구간
@@ -96,6 +96,12 @@ class Engine:
         self._sizer = OrderSizer()
         days = pd.Series(inputs.trading_days, index=inputs.trading_days)
         self._year_end_days = set(days.groupby(days.index.year).max())
+        universe = inputs.universe.sort_values(["rebalance_date", "rank"])
+        self._rebalance_dates = pd.DatetimeIndex(sorted(universe["rebalance_date"].unique()))
+        self._members_by_date = {
+            d: list(zip(g["code"], g["rank"], strict=True))
+            for d, g in universe.groupby("rebalance_date")
+        }
 
     def run(
         self,
@@ -210,9 +216,7 @@ class Engine:
         max_position = self._cfg.max_position_pct * equity
         params = {**spec.params, "max_position": max_position}
         candidates = []
-        for code, rank in members_on(self._in.universe, day)[["code", "rank"]].itertuples(
-            index=False
-        ):
+        for code, rank in self._members(day):
             md_row = self._in.market_data.get((code, day))
             if code in selling or md_row is None:
                 continue
@@ -241,10 +245,10 @@ class Engine:
         next_day: pd.Timestamp,
         equity: float,
     ) -> list[Order]:
-        members = set(members_on(self._in.universe, next_day)["code"])
+        members = {code for code, _ in self._members(next_day)}
         is_first_day = not book.positions and not book.fills
         if not members or (
-            members == set(members_on(self._in.universe, day)["code"]) and not is_first_day
+            members == {code for code, _ in self._members(day)} and not is_first_day
         ):
             return []
         closes = self._in.closes.loc[day]
@@ -263,6 +267,11 @@ class Engine:
             if qty > 0:
                 orders.append(Order(code, "buy" if diff > 0 else "sell", qty, "rebalance"))
         return orders
+
+    def _members(self, day: pd.Timestamp) -> list[tuple[str, int]]:
+        """day보다 이전의 가장 최근 리밸런싱 (code, rank) — universe.members_on과 같은 규칙."""
+        i = self._rebalance_dates.searchsorted(day, side="left") - 1
+        return self._members_by_date[self._rebalance_dates[i]] if i >= 0 else []
 
     def _sell_qty(self, shares: float, sell_ratio: float | None) -> float:
         whole = int(shares)

@@ -10,6 +10,7 @@ import math
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -86,3 +87,39 @@ def to_market_data(row: dict) -> MarketData:
         if k != "date"
     }
     return MarketData(**clean)
+
+
+# StrategyEvaluator가 읽는 MarketData 필드 — 메모리를 줄이려고 이것만 보관한다
+EVALUATOR_FIELDS = (
+    "current_price",
+    "high_30d",
+    "rsi_14",
+    "sma_20",
+    "sma_60",
+    "macd_hist",
+    "bb_lower",
+    "disparity_20",
+    "volume_ratio_20",
+)
+
+
+class MarketDataStore:
+    """(code, date) → MarketData 필드 dict. 종목별 numpy 배열로 보관 (수십만 행)."""
+
+    def __init__(self, table: pd.DataFrame) -> None:
+        self._rows: dict[str, tuple[dict[pd.Timestamp, int], np.ndarray]] = {}
+        for code, rows in table.groupby("ticker"):
+            dates = pd.DatetimeIndex(rows["date"])
+            values = rows[list(EVALUATOR_FIELDS)].to_numpy(dtype=float)
+            self._rows[str(code)] = ({d: i for i, d in enumerate(dates)}, values)
+
+    def get(self, key: tuple[str, pd.Timestamp], default: dict | None = None) -> dict | None:
+        code, day = key
+        entry = self._rows.get(code)
+        if entry is None:
+            return default
+        index, values = entry
+        i = index.get(day)
+        if i is None:
+            return default
+        return {"ticker": code, **dict(zip(EVALUATOR_FIELDS, values[i].tolist(), strict=True))}
