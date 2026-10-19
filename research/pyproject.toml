@@ -40,6 +40,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]  # 한글 주석·문자열의 전각 �
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/**" = ["T20"]  # CLI 스크립트는 print로 결과 출력
+"src/research/fixtures.py" = ["E501"]  # 케이스 표를 한 줄에 하나씩
 
 [tool.ruff.lint.isort]
 known-first-party = ["research", "app"]  # app = backend (같은 레포)

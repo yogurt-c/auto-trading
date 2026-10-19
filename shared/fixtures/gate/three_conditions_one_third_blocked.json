@@ -1,0 +1,21 @@
+{
+  "expected": {
+    "blocked_reason": "signal_score 0.33 < 0.5 — 진입 조건 3개 중 미달로 매수 차단",
+    "entry_allowed": false
+  },
+  "input": {
+    "position_value": 0.0,
+    "result": {
+      "entry_triggered": true,
+      "signal_score": 0.3333333333333333
+    },
+    "strategy": {
+      "entry_rsi_below": 55.0,
+      "entry_sma_cross": 20,
+      "entry_volume_surge": 2.0,
+      "max_position": 3000000.0
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

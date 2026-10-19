@@ -36,17 +36,8 @@ scheduler._job_body()
 ### signal_score 계산
 
 ```python
-# services.py:350
-# 분모: 데이터 가용 여부와 무관한 "전체 설정된 진입 조건 수"
-configured_entry_count = sum([
-    strategy.get("entry_price_drop_pct") is not None,
-    strategy.get("entry_rsi_below") is not None,
-    bool(strategy.get("entry_bb_lower_touch")),
-    bool(strategy.get("entry_macd_hist_positive")),
-    strategy.get("entry_disparity_below") is not None,
-    strategy.get("entry_volume_surge") is not None,
-    strategy.get("entry_sma_cross") is not None,
-])
+# 분모: 데이터 가용 여부와 무관한 "전체 설정된 진입 조건 수" — EntryGate와 공용
+configured_entry_count = count_configured_entry_conditions(strategy)
 signal_score = triggered_count / configured_entry_count
 ```
 
@@ -140,9 +131,11 @@ KIS AI extensions 기준 신호 강도 티어:
 1. **`MarketData` VO** (`value_objects.py`) — 새 필드 추가
 2. **`fetch_market_data()`** (`market.py`) — 지표 계산 및 반환
 3. **`StrategyEvaluator.evaluate()`** (`services.py`) — 조건 평가 블록 추가
-4. **`configured_entry_count` 합산** (`services.py:350`) — signal_score 분모에 신규 조건 포함
+4. **signal_score 분모** — `count_configured_entry_conditions()` 한 곳만 수정 (evaluator·gate 공용)
 5. **`StrategyValidator.validate()`** (`services.py`) — 파라미터 범위 검증 추가
 6. **`Strategy` ORM 컬럼** (`models.py`) — DB 컬럼 추가
 7. **Alembic 마이그레이션** — 스키마 변경 적용
 8. **`domain-strategy.md`** — 도메인 명세 업데이트
 9. **`agent.py` 프롬프트** — trade-executor 신호 해석 안내 업데이트 (필요 시)
+10. **`count_configured_entry_conditions()`** (`services.py`) — 게이트 조건 수에 신규 조건 포함
+11. **`shared/fixtures/`** — `research/src/research/fixtures.py`에 케이스 추가 후 `gen_fixtures.py` 재생성

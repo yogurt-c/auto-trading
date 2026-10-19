@@ -1,0 +1,34 @@
+{
+  "expected": {
+    "conditions": {
+      "entry_volume_surge": {
+        "current_volume_ratio": 2.0,
+        "threshold": 2.0,
+        "triggered": true
+      }
+    },
+    "current_pnl_pct": null,
+    "current_price": 100.0,
+    "entry_triggered": true,
+    "exit_triggered": false,
+    "holding_avg_price": null,
+    "note": "No holding found; take_profit/stop_loss not evaluated",
+    "signal_score": 1.0,
+    "ticker": "TEST"
+  },
+  "input": {
+    "holding": null,
+    "market_data": {
+      "currency": "KRW",
+      "current_price": 100.0,
+      "market": "KR",
+      "ticker": "TEST",
+      "volume_ratio_20": 2.0
+    },
+    "strategy": {
+      "entry_volume_surge": 2.0
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

@@ -1,0 +1,34 @@
+{
+  "expected": {
+    "conditions": {
+      "entry_sma_cross": {
+        "current_price": 100.0,
+        "sma_20": 100.0,
+        "triggered": false
+      }
+    },
+    "current_pnl_pct": null,
+    "current_price": 100.0,
+    "entry_triggered": false,
+    "exit_triggered": false,
+    "holding_avg_price": null,
+    "note": "No holding found; take_profit/stop_loss not evaluated",
+    "signal_score": 0.0,
+    "ticker": "TEST"
+  },
+  "input": {
+    "holding": null,
+    "market_data": {
+      "currency": "KRW",
+      "current_price": 100.0,
+      "market": "KR",
+      "sma_20": 100.0,
+      "ticker": "TEST"
+    },
+    "strategy": {
+      "entry_sma_cross": 20
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

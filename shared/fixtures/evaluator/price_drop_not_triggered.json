@@ -1,0 +1,35 @@
+{
+  "expected": {
+    "conditions": {
+      "entry_price_drop": {
+        "current_drop_pct": -3.0,
+        "reference_30d_high": 100.0,
+        "threshold_pct": -5.0,
+        "triggered": false
+      }
+    },
+    "current_pnl_pct": null,
+    "current_price": 97.0,
+    "entry_triggered": false,
+    "exit_triggered": false,
+    "holding_avg_price": null,
+    "note": "No holding found; take_profit/stop_loss not evaluated",
+    "signal_score": 0.0,
+    "ticker": "TEST"
+  },
+  "input": {
+    "holding": null,
+    "market_data": {
+      "currency": "KRW",
+      "current_price": 97.0,
+      "high_30d": 100.0,
+      "market": "KR",
+      "ticker": "TEST"
+    },
+    "strategy": {
+      "entry_price_drop_pct": -5.0
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}
