@@ -1,0 +1,55 @@
+# 전략 설정. StrategyEvaluator / EntryGate / OrderSizer 입력과 같은 키를 쓴다.
+capital: 100000000              # 초기 자본 (KRW)
+max_position_pct_of_equity: 0.10  # 종목당 max_position = 결정 시점 총자산 * 10%
+
+# S0 기준 프리셋: 현재 DB 전략 4개의 중앙값 (튜닝 없음)
+s0_preset:
+  entry_rsi_below: 55.0
+  entry_volume_surge: 2.0
+  take_profit_pct: 10.0
+  stop_loss_pct: -5.0
+  sell_ratio: 0.5
+
+# 민감도 참고용: 현재 DB 전략 원본 4개 (판정에는 쓰지 않음)
+db_presets:
+  "000660": {entry_rsi_below: 55.0, entry_volume_surge: 1.5, take_profit_pct: 10.0, stop_loss_pct: -5.0, sell_ratio: 0.5}
+  "005930": {entry_rsi_below: 50.0, entry_bb_lower_touch: true, take_profit_pct: 6.5, stop_loss_pct: -5.0, sell_ratio: 0.5}
+  "006400": {entry_rsi_below: 55.0, entry_volume_surge: 2.0, take_profit_pct: 12.5, stop_loss_pct: -5.0, sell_ratio: 0.5}
+  "373220": {entry_rsi_below: 55.0, entry_volume_surge: 2.0, take_profit_pct: 10.0, stop_loss_pct: -5.0, sell_ratio: 0.5}
+
+# S0' 튜닝 격자 (학습 구간에서만 탐색, 36개 조합). 시도 수는 Deflated Sharpe에 반영
+tuning_grid:
+  entry_rsi_below: [30.0, 45.0, 55.0]
+  entry_volume_surge: [1.5, 2.0]
+  take_profit_pct: [6.5, 10.0, 15.0]
+  stop_loss_pct: [-5.0, -8.0]
+  sell_ratio: [0.5]
+
+# 실행 모델
+execution:
+  signal_bars: completed_daily  # t일 종가까지의 완결 일봉으로 판단
+  fill: next_open               # t+1일 시가 체결, 거래 없으면 주문 취소
+  order_of_ops: sells_then_buys # 같은 날 매도 대금으로 매수 가능
+  buy_priority: [signal_score_desc, market_cap_rank_asc]
+
+# S1 시장 국면 필터
+regime_filter:
+  index: "코스피 200"
+  sma_period: 200               # 지수 종가 > SMA200 일 때만 신규 진입 허용 (청산은 항상 허용)
+
+# S2 공시 악재 거부권 (DART). 접수일 다음 거래일부터 N거래일간 신규 진입 금지
+disclosure_veto:
+  block_trading_days: 20
+  report_name_keywords:
+    - 유상증자결정
+    - 전환사채권발행결정
+    - 신주인수권부사채권발행결정
+    - 감자결정
+    - 횡령·배임
+    - 상장적격성실질심사
+    - 관리종목지정
+    - 불성실공시법인지정
+    - 회생절차개시
+    - 영업정지
+    - 주권매매거래정지
+  audit_opinion_keywords: [의견거절, 한정]
