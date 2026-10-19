@@ -20,3 +20,11 @@ build/
 .env.production
 kis_api_spec.xlsx
 tools
+# macOS
+.DS_Store
+._*
+
+# research
+research/.venv/
+research/data/
+research/reports/output/

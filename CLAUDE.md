@@ -2,6 +2,12 @@
 
 AI-powered financial portfolio management tool — monitors holdings, runs automated trading strategies via KIS (Korea Investment & Securities), and provides a Claude AI agent for natural language interaction.
 
+## Layout
+
+- `backend/` · `frontend/` — 기존 서버·웹 (Android 전환 후 폐기 예정)
+- `research/` — P0 백테스트. backend를 `pip install -e`로 설치해 호출만 하며, backend 코드를 고치지 않는다
+- `shared/fixtures/` — 입력 → 기대 신호 JSON. pytest와 Kotlin 테스트가 함께 읽는다
+
 ## Rules
 
 - `frontend/pages/` must only use `frontend.api_client` — never import `backend/` directly
