@@ -33,6 +33,6 @@ jobs:
             backend/pyproject.toml
             research/pyproject.toml
       - run: pip install -e ../backend -e ".[dev]"
-      - run: ruff check src/ tests/ scripts/
-      - run: ruff format --check src/ tests/ scripts/
+      - run: ruff check .
+      - run: ruff format --check .
       - run: pytest
