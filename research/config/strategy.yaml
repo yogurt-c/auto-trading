@@ -53,3 +53,5 @@ disclosure_veto:
     - 영업정지
     - 주권매매거래정지
   audit_opinion_keywords: [의견거절, 한정]
+  # 종속회사·자회사 공시는 대개 모회사의 자회사 지원이라 모회사 악재가 아니다 (백테스트 실행 전 추가)
+  report_name_exclude: [종속회사, 자회사]

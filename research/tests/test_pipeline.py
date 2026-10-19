@@ -104,3 +104,11 @@ def test_regime_false_until_sma_available():
     regime = regime_series(closes, 5)
     assert not regime.iloc[:4].any()
     assert regime.iloc[4:].all()
+
+
+def test_veto_windows_skip_subsidiary_disclosures():
+    days = pd.bdate_range("2020-01-01", periods=30)
+    disclosures = pd.DataFrame(
+        {"report_nm": ["유상증자결정(종속회사의주요경영사항)"], "rcept_dt": ["20200103"]}
+    )
+    assert veto_windows(disclosures, days, ["유상증자결정"], 5, exclude=["종속회사"]) == []

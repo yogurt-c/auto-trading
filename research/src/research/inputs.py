@@ -29,12 +29,16 @@ def veto_windows(
     trading_days: pd.DatetimeIndex,
     keywords: list[str],
     block_days: int,
+    exclude: list[str] | None = None,
 ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     """악재 공시 → 진입 금지 구간. 접수일 다음 거래일부터 block_days 거래일."""
     if disclosures.empty:
         return []
-    pattern = "|".join(keywords)
-    hits = disclosures[disclosures["report_nm"].str.contains(pattern, regex=True, na=False)]
+    names = disclosures["report_nm"]
+    is_hit = names.str.contains("|".join(keywords), regex=True, na=False)
+    if exclude:
+        is_hit &= ~names.str.contains("|".join(exclude), regex=True, na=False)
+    hits = disclosures[is_hit]
     windows = []
     for rcept_dt in pd.to_datetime(hits["rcept_dt"], format="%Y%m%d"):
         start = trading_days.searchsorted(rcept_dt, side="right")
@@ -60,7 +64,11 @@ def _load_dart(trading_days: pd.DatetimeIndex) -> tuple[dict, dict]:
         if files:
             disclosures = pd.read_parquet(files[0])
             veto[code] = veto_windows(
-                disclosures, trading_days, keywords, veto_cfg["block_trading_days"]
+                disclosures,
+                trading_days,
+                keywords,
+                veto_cfg["block_trading_days"],
+                veto_cfg.get("report_name_exclude"),
             )
         div_path = DART_DIR / "dividends" / f"{corp_code}.json"
         if div_path.exists():
