@@ -16,10 +16,11 @@ data class OrderReceipt(val orderNo: String, val orgNo: String, val code: String
 
 /**
  * 주식일별주문체결조회 한 줄. 취소 주문도 별도 줄로 나오며 [originalOrderNo]가 원주문번호다.
- * 미체결 수량 = 주문 - 체결 - 취소확인 - 거부.
+ * 미체결 수량 = 주문 - 체결 - 취소확인 - 거부. [orgNo](주문채번지점번호)는 취소의 KRX_FWDG_ORD_ORGNO로 쓴다.
  */
 data class OrderStatus(
     val orderNo: String,
+    val orgNo: String,
     val originalOrderNo: String?,
     val code: String,
     val side: Side,
@@ -31,4 +32,6 @@ data class OrderStatus(
 ) {
     val openQty: Int get() = (orderedQty - filledQty - canceledQty - rejectedQty).coerceAtLeast(0)
     val isSettled: Boolean get() = openQty == 0
+
+    fun receipt() = OrderReceipt(orderNo, orgNo, code, side, orderedQty)
 }
