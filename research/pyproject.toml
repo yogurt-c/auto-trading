@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portfolio-research"
+version = "0.1.0"
+requires-python = ">=3.11"
+# portfolio-backend는 PyPI 패키지가 아니므로 `make research-install`에서 `-e ../backend`로 설치한다.
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.26",
+    "pyarrow>=15.0",
+    "httpx>=0.25.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "loguru>=0.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "B", "C4", "UP", "SIM", "PT", "T20", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # 한글 주석·문자열의 전각 문자 허용
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/**" = ["T20"]  # CLI 스크립트는 print로 결과 출력

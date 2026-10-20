@@ -1,4 +1,5 @@
-.PHONY: backend frontend dev install test test-unit test-integration lint fmt
+.PHONY: backend frontend dev install test test-unit test-integration lint fmt \
+	research-install research-test research-lint research-fmt
 
 backend:
 	cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000
@@ -27,3 +28,15 @@ lint:
 
 fmt:
 	cd backend && source venv/bin/activate && ruff format app/ tests/
+
+research-install:
+	cd research && python3.11 -m venv .venv && .venv/bin/pip install -e ../backend -e ".[dev]"
+
+research-test:
+	cd research && .venv/bin/pytest
+
+research-lint:
+	cd research && .venv/bin/ruff check src/ tests/ scripts/
+
+research-fmt:
+	cd research && .venv/bin/ruff format src/ tests/ scripts/
