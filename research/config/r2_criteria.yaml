@@ -1,0 +1,36 @@
+# R2 통과 기준 — 백테스트 실행 전 사전 등록. 이 파일의 커밋 해시가 사전 등록 증거.
+# 지표 계산(일간 수익률·Sharpe·부트스트랩)은 criteria.yaml의 metrics를 그대로 쓴다.
+
+comparator: max_sharpe_of [B1, B4]
+
+# 학습 구간(2012–2019) 게이트 — 둘 다 충족한 후보만 최종 후보 자격
+train_gate:
+  - id: T1
+    rule: 학습 Sharpe > comparator Sharpe
+  - id: T2
+    rule: 학습 CAGR > comparator CAGR     # 위험만 줄이고 수익은 낮은 전략은 이번 목표(수익 개선)에 맞지 않음
+
+# 최종 후보: 게이트를 통과한 후보 중 학습 Sharpe가 가장 높은 1개. 검증 구간은 그 1개로 단 1회.
+# 게이트 통과 후보가 없으면 검증 구간을 쓰지 않고 지수 정기 매수(P0 결론) 유지.
+
+test_pass:
+  - id: P1
+    rule: 검증 Sharpe > comparator Sharpe
+  - id: P2
+    rule: 검증 CAGR > comparator CAGR
+  - id: P3
+    rule: 부트스트랩 P(Sharpe_전략 > Sharpe_comparator) >= 0.75
+    min_probability: 0.75
+  - id: P4
+    rule: 검증 Sharpe >= 학습 Sharpe * 0.5
+    min_ratio: 0.5
+  - id: P5
+    rule: 슬리피지 2배에서도 P1 유지
+  - id: P6
+    rule: 검증 MDD >= -45%                # 레버리지 후보를 허용하되 계좌 절반 이상 손실은 불합격
+    min_mdd_pct: -45.0
+  - id: P7
+    rule: 학습 구간 Deflated Sharpe >= 0.9 (시도 = R2 후보 4개의 학습 Sharpe)
+    min_deflated_sharpe: 0.9
+
+on_failure: 지수 정기 매수 유지
