@@ -1,7 +1,7 @@
 # shared/fixtures
 
-전략 로직의 **입력 → 기대 출력** JSON. 기준 원본은 `backend/app/domain/` + `backend/app/infrastructure/indicators.py`이며,
-backend pytest(`tests/unit/test_shared_fixtures.py`)와 Android Kotlin 테스트가 같은 파일을 읽는다.
+전략 로직의 **입력 → 기대 출력** JSON. 기준 원본은 `backend/app/domain/` + `backend/app/infrastructure/indicators.py`(indicators·evaluator·gate·sizer)와
+`research/src/research/rebalance.py`(profiles·rebalance)이며, pytest와 Android Kotlin 테스트(`android/core`)가 같은 파일을 읽는다.
 
 - 생성: `cd research && .venv/bin/python scripts/gen_fixtures.py` — 직접 수정하지 않는다
 - 도메인·지표 로직을 바꾸면 **같은 커밋에서 재생성**한다 (backend CI가 불일치를 잡는다)
@@ -22,10 +22,13 @@ backend pytest(`tests/unit/test_shared_fixtures.py`)와 Android Kotlin 테스트
 | `indicators/` | `dates`, `high`, `low`, `close`, `volume` (오래된 순, 마지막 = 판단일) | `MarketData` 필드 전체 (`null` = 계산 불가) | `build_market_data` |
 | `evaluator/` | `strategy`, `market_data`, `holding`(`{avg_price}` 또는 `null`) | `EvaluationResult` | `StrategyEvaluator.evaluate` |
 | `gate/` | `strategy`, `result`(`entry_triggered`, `signal_score`), `position_value` | `{entry_allowed, blocked_reason}` | `EntryGate.apply` |
+| `profiles/` | 없음 | 앱 성향 → `{종목코드: 비중}` | Android `Profile` (기준: `research/config/r3_profiles.yaml`·`r4_conservative.yaml`) |
+| `rebalance/` | `weights`, `holdings`, `prices`(전일 종가), `cash`, `managed_codes`, `params` | `equity`, `targets`, `sells` → `holdings_after_sells`·`cash_after_sells` → `buys` | `research/src/research/rebalance.py` → Android `RebalancePlanner` |
 | `sizer/` | `buy`(`max_position`, `position_value`, `price`, `available_cash`) 또는 `sell`(`shares`, `sell_ratio`) | 정수 수량 | `OrderSizer` |
 
 ## 비교 규칙 (Kotlin 포팅 시)
 
+- `rebalance` 수량·주문 목록은 **정확히 일치** (매도는 종목코드 순, 매수는 종목코드 순으로 예수금 소진)
 - 판정 필드(`entry_triggered`, `exit_triggered`, `entry_allowed`, `conditions.*.triggered`, 수량)는 **정확히 일치**
 - 실수 값은 상대오차 `1e-9` 이내 (연산 순서 차이 허용). `signal_score`·`conditions`의 값은 소수 반올림된 값 그대로 비교
 - 문자열(`note`, `blocked_reason`)은 참고용 — 비교하지 않는다

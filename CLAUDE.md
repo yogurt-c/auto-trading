@@ -7,6 +7,7 @@ AI-powered financial portfolio management tool — monitors holdings, runs autom
 - `backend/` · `frontend/` — 기존 서버·웹 (Android 전환 후 폐기 예정)
 - `research/` — P0 백테스트. backend를 `pip install -e`로 설치해 호출만 하며, backend 코드를 고치지 않는다
 - `shared/fixtures/` — 입력 → 기대 신호 JSON. pytest와 Kotlin 테스트가 함께 읽는다
+- `android/` — 서버 없이 월 리밸런싱을 실행하는 앱 (설계: [design-android.md](.claude/docs/design-android.md)). `core`는 순수 Kotlin
 
 ## Rules
 
@@ -27,5 +28,6 @@ AI-powered financial portfolio management tool — monitors holdings, runs autom
 | [domain-portfolio.md](.claude/docs/domain-portfolio.md) | Portfolio 도메인 명세 |
 | [domain-strategy.md](.claude/docs/domain-strategy.md) | TradingStrategy 도메인 명세 |
 | [domain-signal-score.md](.claude/docs/domain-signal-score.md) | 신호 점수(signal_score) 계산·게이트·티어 설계, 새 진입 조건 추가 체크리스트 |
+| [design-android.md](.claude/docs/design-android.md) | Android 앱 설계 — 성향·모듈·KIS API·월 실행 상태 기계 |
 | [checklist-development.md](.claude/docs/checklist-development.md) | 구현 완료 후 점검 체크리스트 |
 | [kis-api-spec.md](.claude/docs/kis-api-spec.md) | KIS OpenAPI 전체 목록 및 프로젝트 사용 API 상세 스펙 (Request/Response 필드, TR_ID, 예시 포함) |
