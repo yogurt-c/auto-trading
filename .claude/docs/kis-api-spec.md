@@ -486,6 +486,41 @@
 
 > ⭐ 표시: 현재 portfolio 프로젝트에서 실제 사용 중인 API
 
+## Android 앱 추가 사용 API (`android/kis`)
+
+> KIS 공식 문서·open-trading-api 예제 기준으로 정리. 모의투자 실제 응답은 P5에서 확인한다.
+
+### 매수가능조회 — `GET /uapi/domestic-stock/v1/trading/inquire-psbl-order`, 모의 `VTTC8908R`
+
+| Query | 값 |
+|-------|-----|
+| `CANO`, `ACNT_PRDT_CD` | 계좌 8-2 |
+| `PDNO`, `ORD_UNPR` | 공란 → 수량 없이 금액만 조회 |
+| `ORD_DVSN` | `01` 시장가 |
+| `CMA_EVLU_AMT_ICLD_YN`, `OVRS_ICLD_YN` | `N` |
+
+응답 `output`(single): `ord_psbl_cash` 주문가능현금, `nrcvb_buy_amt` **미수없는매수금액 (앱이 사용)**, `max_buy_amt` 최대매수금액(미수 포함 — 쓰지 않음).
+
+### 주식현재가 일자별 — `GET /uapi/domestic-stock/v1/quotations/inquire-daily-price`, `FHKST01010400` (모의·실전 공통)
+
+| Query | 값 |
+|-------|-----|
+| `FID_COND_MRKT_DIV_CODE` | `J` |
+| `FID_INPUT_ISCD` | 종목코드 6자리 |
+| `FID_PERIOD_DIV_CODE` | `D` 일 |
+| `FID_ORG_ADJ_PRC` | `0` |
+
+응답 `output`(array, 최근 30거래일): `stck_bsop_date` 영업일자(YYYYMMDD), `stck_clpr` 종가 등. 장중에는 오늘 줄의 종가가 현재가다 → 오늘 줄이 없으면 휴장으로 판단.
+
+### 공통 오류 처리 (앱)
+
+| msg_cd | 의미 | 처리 |
+|--------|------|------|
+| `EGW00201` | 초당 거래건수 초과 | 1초·2초·3초 대기 후 재전송 (주문 포함 — 처리되지 않은 요청) |
+| `EGW00121`, `EGW00123` | 유효하지 않은/만료된 토큰 | 토큰 1회 재발급 후 재전송 |
+| `EGW00133` | 토큰 발급 1분 1회 제한 (`/oauth2/tokenP`, `error_code`) | 1분 뒤 재시도 |
+| 본문 없는 5xx·연결 끊김 | — | 조회만 재시도. 주문·취소는 접수 여부 불명 → 주문체결조회로 확인 |
+
 ## Hashkey
 
 ### 기본 정보

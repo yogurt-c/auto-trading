@@ -15,4 +15,4 @@ dependencyResolutionManagement {
     }
 }
 
-include(":core")
+include(":core", ":kis")
