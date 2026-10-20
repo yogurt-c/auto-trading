@@ -30,7 +30,7 @@ backend/
 │   │   ├── auth.py           # JWT 생성·검증, bcrypt 해싱, Secret Key 관리 (DB 기반)
 │   │   ├── config.py         # Settings dataclass (SQLAlchemy 기반, 캐시)
 │   │   ├── database.py       # SQLite init (Alembic), get_session() 컨텍스트매니저
-│   │   ├── indicators.py     # 기술지표 계산 함수 (calc_rsi/sma/ema/macd/bollinger…) — I/O 없음
+│   │   ├── indicators.py     # 기술지표 calc_* + build_market_data(OHLCV → MarketData) — I/O 없음
 │   │   ├── market.py         # get_current_prices() + fetch_market_data() — Yahoo Finance (yfinance)
 │   │   ├── models.py         # SQLAlchemy ORM 모델 (Holding, Strategy, TradeLog …)
 │   │   └── repository.py     # Data Access Layer — 전체 테이블 CRUD 함수

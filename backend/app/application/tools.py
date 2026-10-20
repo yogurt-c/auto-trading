@@ -16,6 +16,7 @@ from app.application.scheduler import is_krx_open, is_nyse_open
 from app.domain.portfolio.services import PortfolioValuationService, RealizedPnlAggregator
 from app.domain.trading_strategy.services import (
     DcaScheduleChecker,
+    EntryGate,
     StrategyEvaluator,
     StrategyValidator,
 )
@@ -26,6 +27,7 @@ from app.infrastructure import repository as db
 
 _strategy_validator = StrategyValidator()
 _strategy_evaluator = StrategyEvaluator()
+_entry_gate = EntryGate()
 _dca_checker = DcaScheduleChecker()
 _valuation_service = PortfolioValuationService()
 _pnl_aggregator = RealizedPnlAggregator()
@@ -283,48 +285,25 @@ def evaluate_strategy(strategy_id: int) -> dict:
 
     result_dict = result.model_dump()
 
-    # max_position 한도 초과 시 entry_triggered 차단 (place_order까지 도달하지 않도록)
-    max_position = strategy.get("max_position")
-    if max_position and result_dict["entry_triggered"]:
-        strategy_currency = strategy.get("currency", "USD")
-        # 통화 단위 일관성 검증
-        if mkt.currency and mkt.currency != strategy_currency:
-            logger.warning(
-                f"evaluate_strategy id={strategy_id}: currency mismatch — "
-                f"strategy={strategy_currency}, market_data={mkt.currency}"
-            )
-            result_dict["note"] = (
-                f"통화 단위 불일치 경고: 전략={strategy_currency}, 시장데이터={mkt.currency}. "
-                "max_position 한도 체크 결과가 부정확할 수 있습니다."
-            )
-        current_qty = current_holding.get("shares", 0) if current_holding else 0
-        current_value = current_qty * mkt.current_price
-        if current_value >= max_position:
-            result_dict["entry_triggered"] = False
-            result_dict["note"] = (
-                f"포지션 한도 초과로 매수 차단: "
-                f"현재 {current_value:,.0f} >= 한도 {max_position:,.0f} {strategy_currency}"
-            )
-            logger.info(
-                f"evaluate_strategy id={strategy_id}: entry blocked — "
-                f"position {current_value:,.0f} >= "
-                f"max_position {max_position:,.0f} {strategy_currency}"
-            )
+    strategy_currency = strategy.get("currency", "USD")
+    has_limit_check = bool(strategy.get("max_position")) and result.entry_triggered
+    if has_limit_check and mkt.currency and mkt.currency != strategy_currency:
+        logger.warning(
+            f"evaluate_strategy id={strategy_id}: currency mismatch — "
+            f"strategy={strategy_currency}, market_data={mkt.currency}"
+        )
+        result_dict["note"] = (
+            f"통화 단위 불일치 경고: 전략={strategy_currency}, 시장데이터={mkt.currency}. "
+            "max_position 한도 체크 결과가 부정확할 수 있습니다."
+        )
 
-    # signal_score < 0.5 시 entry_triggered 차단 (2개 이상 진입 조건 전략)
-    if result_dict["entry_triggered"] and result_dict.get("signal_score") is not None:
-        entry_cond_count = sum(1 for k in result_dict["conditions"] if k.startswith("entry_"))
-        if entry_cond_count >= 2 and result_dict["signal_score"] < 0.5:
-            result_dict["entry_triggered"] = False
-            result_dict["note"] = (
-                f"signal_score {result_dict['signal_score']:.2f} < 0.5 — "
-                f"진입 조건 {entry_cond_count}개 중 미달로 매수 차단"
-            )
-            logger.info(
-                f"evaluate_strategy id={strategy_id}: entry blocked — "
-                f"signal_score={result_dict['signal_score']:.2f} < 0.5 "
-                f"({entry_cond_count} conditions)"
-            )
+    # 포지션 한도·signal_score 게이트 (place_order까지 도달하지 않도록 코드 레벨에서 차단)
+    current_qty = current_holding.get("shares", 0) if current_holding else 0
+    gate = _entry_gate.apply(strategy, result, position_value=current_qty * mkt.current_price)
+    if result_dict["entry_triggered"] and not gate.entry_allowed:
+        result_dict["entry_triggered"] = False
+        result_dict["note"] = gate.blocked_reason
+        logger.info(f"evaluate_strategy id={strategy_id}: entry blocked — {gate.blocked_reason}")
 
     logger.debug(
         f"evaluate_strategy id={strategy_id}: "

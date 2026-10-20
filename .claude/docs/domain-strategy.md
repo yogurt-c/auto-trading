@@ -33,7 +33,7 @@ AI 에이전트가 자연어로 전략을 생성하고, 스케줄러가 주기�
 - `entry_condition.entry_sma_cross`은 **20 또는 60** 만 허용
 - `dca_amount ≤ max_position` (DCA 1회 금액이 포지션 한도 이하)
 - `status` 전이: `active → paused → completed` (역방향 불가)
-- `max_position` 한도 초과 시 entry_triggered 차단은 **Application 레이어(`tools.py`)에서** 수행 — Domain의 `StrategyEvaluator`는 순수 조건 평가만 담당하며, I/O(현재 보유량 조회)가 필요한 한도 체크는 Application이 후처리
+- `max_position` 한도·signal_score 차단 판정은 **Domain `EntryGate`**가 수행 — Application(`tools.py`)은 현재 보유 평가액을 조회(I/O)해 주입만 한다. `StrategyEvaluator`는 순수 조건 평가만 담당
 - 시장 시간 체크는 **Application 레이어(`scheduler.py`, `tools.py`)에서** 코드로 수행 — LLM 프롬프트 지시에만 의존하지 않음
 - `exit_triggered`는 `current_holding`이 존재할 때만 발동 — 보유 없이 청산 신호가 생성되어서는 안 됨
 
@@ -80,7 +80,8 @@ AI 에이전트가 자연어로 전략을 생성하고, 스케줄러가 주기�
 | `entry_volume_surge` | Optional[float] | 거래량 급등 비율 임계값 이상 시 진입 (1.0 초과, 예: 2.0 = 평균의 2배) |
 | `entry_sma_cross` | Optional[int] | 현재가가 SMA(N)일 위일 때 진입 (20 또는 60 지원) |
 
-> RSI 계산: 14일 Wilder's Smoothing Method  
+> RSI 계산: 14일 Wilder's Smoothing Method (첫 평균은 14개 변화량 단순평균, 이후 `avg = (avg*13 + x)/14`)  
+> 모든 지표는 완결 일봉 마지막 `INDICATOR_LOOKBACK_BARS`(250)개로 계산 — EMA·MACD·RSI는 입력 길이에 따라 값이 달라짐  
 > 이격도(Disparity): `(current_price / SMA_20 - 1) × 100`  
 > 거래량 비율: `current_volume / avg_volume(20일)`
 
@@ -160,6 +161,12 @@ def evaluate(
   - `holding_avg_price: float | None`, `current_pnl_pct: float | None`
 - **현재 위치**: `backend/app/domain/trading_strategy/services.py::StrategyEvaluator.evaluate()`
 
+### `EntryGate` · `OrderSizer`
+
+- `EntryGate.apply(strategy, result, position_value) -> GateDecision` — 포지션 한도 + signal_score 게이트
+- `OrderSizer.buy_qty(...)` / `sell_qty(...)` — 분할 매수(1/3)·sell_ratio 올림 매도
+- 상세: [domain-signal-score.md](domain-signal-score.md)
+
 ### `DcaScheduleChecker`
 
 ```python
@@ -234,7 +241,8 @@ class TradeLogRepository(Protocol):
 | 진입/청산 조건 평가 (RSI, 볼린저, MACD 등) | Domain (`StrategyEvaluator`) | 순수 계산, I/O 없음 |
 | 전략 파라미터 유효성 검증 | Domain (`StrategyValidator`) | 불변조건 사전 검사, I/O 없음 |
 | DCA 일정 도래 여부 | Domain (`DcaScheduleChecker`) | 시간 비교만, I/O 없음 |
-| max_position 한도 초과 차단 | Application (`tools.py`) | 현재 보유량 DB 조회 필요 (I/O) |
+| max_position 한도·signal_score 게이트 | Domain (`EntryGate`) + Application (`tools.py`가 보유 평가액 조회 후 주입) | 판정은 순수, 보유량 조회만 I/O |
+| 주문 수량 계산 | Domain (`OrderSizer`) | 순수 계산 |
 | 시장 개장 시간 체크 | Application (`scheduler.py`, `tools.py`) | 현재 시각 + 시장 규칙 판단 |
 | 주문 제출 및 직렬화 | Application (`tools.py`) | 외부 API 호출 (I/O) |
 
