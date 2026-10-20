@@ -67,7 +67,7 @@ data class MonthlyRun(
     }
 }
 
-/** app은 Room으로 구현한다 (month → [MonthlyRun.toJson]). */
+/** 구현: [FileRunStore] (month → [MonthlyRun.toJson] 파일), 테스트는 [InMemoryRunStore]. */
 interface RunStore {
     fun load(month: YearMonth): MonthlyRun?
     fun save(run: MonthlyRun)

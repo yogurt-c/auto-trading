@@ -15,4 +15,4 @@ dependencyResolutionManagement {
     }
 }
 
-include(":core", ":kis", ":engine")
+include(":core", ":kis", ":engine", ":app")

@@ -42,4 +42,4 @@ research-fmt:
 	cd research && .venv/bin/ruff format src/ tests/ scripts/
 
 android-test:
-	cd android && ./gradlew test
+	cd android && ./gradlew test :app:assembleDebug :app:lintDebug

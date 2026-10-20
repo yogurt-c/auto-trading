@@ -1,4 +1,4 @@
-// 월 리밸런싱 실행 상태 기계 (순수 JVM) — 저장소(RunStore)는 app이 Room으로 구현
+// 월 리밸런싱 실행 상태 기계·실행 일정·파일 저장소 (순수 JVM)
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
