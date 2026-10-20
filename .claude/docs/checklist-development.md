@@ -19,7 +19,8 @@
 - [ ] `research/src/research/rebalance.py`·성향 비중(`config/r3_profiles.yaml`, `r4_conservative.yaml`)을 바꿨다면 fixture 재생성 후 Android `core`도 같이 수정
 
 ## Android
-- [ ] `cd android && ./gradlew :core:test` 통과 (android/ 또는 shared/fixtures 변경 시)
+- [ ] `cd android && ./gradlew test` 통과 (android/ 또는 shared/fixtures 변경 시)
+- [ ] `kis`: 주문·취소 POST는 네트워크 오류 시 재전송하지 않는다 (OkHttp `retryOnConnectionFailure(false)` 유지). 새 KIS API는 `kis-api-spec.md`에서 모의투자 지원 확인
 
 ## DB 마이그레이션
 - [ ] `backend/app/infrastructure/models.py` 변경 시 alembic revision 파일 생성했는가
