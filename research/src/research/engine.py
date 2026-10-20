@@ -59,6 +59,20 @@ class EqualWeightSpec:
 
 
 @dataclass(frozen=True)
+class MomentumSpec:
+    """R2-C: 유니버스에서 lookback 거래일 수익률 상위 hold 종목 동일비중, every 거래일마다 교체."""
+
+    name: str
+    lookback: int
+    hold: int
+    every: int
+    cash_buffer: float = 0.005
+
+
+Spec = StrategySpec | EqualWeightSpec | MomentumSpec
+
+
+@dataclass(frozen=True)
 class Order:
     code: str
     side: str
@@ -68,7 +82,7 @@ class Order:
 
 @dataclass
 class BacktestResult:
-    spec: StrategySpec | EqualWeightSpec
+    spec: Spec
     equity: pd.Series
     fills: list[Fill]
     blocked_by_veto: list[tuple[pd.Timestamp, str]] = field(default_factory=list)
@@ -102,10 +116,11 @@ class Engine:
             d: list(zip(g["code"], g["rank"], strict=True))
             for d, g in universe.groupby("rebalance_date")
         }
+        self._momentum_cache: dict[int, pd.DataFrame] = {}
 
     def run(
         self,
-        spec: StrategySpec | EqualWeightSpec,
+        spec: Spec,
         start: pd.Timestamp,
         end: pd.Timestamp,
     ) -> BacktestResult:
@@ -129,6 +144,12 @@ class Engine:
                 pending = []
             elif isinstance(spec, EqualWeightSpec):
                 pending = self._decide_equal_weight(spec, book, day, days[i + 1], equity[day])
+            elif isinstance(spec, MomentumSpec):
+                pending = (
+                    self._decide_momentum(spec, book, day, days[i + 1], equity[day])
+                    if i % spec.every == 0
+                    else []
+                )
             else:
                 pending = self._decide(spec, book, day, equity[day], blocked)
 
@@ -251,8 +272,43 @@ class Engine:
             members == {code for code, _ in self._members(day)} and not is_first_day
         ):
             return []
+        return self._rebalance_to(book, day, members, equity * (1 - spec.cash_buffer))
+
+    def _decide_momentum(
+        self,
+        spec: MomentumSpec,
+        book: Portfolio,
+        day: pd.Timestamp,
+        next_day: pd.Timestamp,
+        equity: float,
+    ) -> list[Order]:
+        momentum = self._momentum(spec.lookback).loc[day]
         closes = self._in.closes.loc[day]
-        target = equity * (1 - spec.cash_buffer) / len(members)
+        ranked = sorted(
+            (
+                (-float(momentum[code]), code)
+                for code, _ in self._members(next_day)
+                if pd.notna(momentum.get(code)) and pd.notna(closes.get(code))
+            ),
+        )
+        picks = {code for _, code in ranked[: spec.hold]}
+        return self._rebalance_to(book, day, picks, equity * (1 - spec.cash_buffer))
+
+    def _momentum(self, lookback: int) -> pd.DataFrame:
+        """lookback 거래일 수익률 (분할·권리락 조정). 판단일 이후 정보는 쓰지 않는다."""
+        if lookback not in self._momentum_cache:
+            # adj_ratio_t = t 이후(t 제외) 조정 계수의 곱 — 두 시점 비율에는 그 사이 계수만 남는다
+            adj_ratio = self._in.factors[::-1].cumprod()[::-1].shift(-1, fill_value=1.0)
+            adj_close = (self._in.closes * adj_ratio).ffill()
+            self._momentum_cache[lookback] = adj_close / adj_close.shift(lookback) - 1
+        return self._momentum_cache[lookback]
+
+    def _rebalance_to(
+        self, book: Portfolio, day: pd.Timestamp, members: set[str], budget: float
+    ) -> list[Order]:
+        """members 동일비중으로 맞추는 주문. 빠진 종목은 전량 매도."""
+        closes = self._in.closes.loc[day]
+        target = budget / len(members) if members else 0.0
         orders = [
             Order(code, "sell", held.shares, "rebalance_out")
             for code, held in book.positions.items()

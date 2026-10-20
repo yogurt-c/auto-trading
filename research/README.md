@@ -60,3 +60,23 @@ KRX는 [openapi.krx.co.kr](https://openapi.krx.co.kr)에서 인증키 발급 후
 
 검증 단계는 실행 직전에 `reports/TEST_RUN.lock`을 만들고, `config/`에 커밋되지 않은 변경이 있으면 거부한다.
 결과는 `reports/*_report.json`과 `test_equity.csv` (커밋 대상 — 원본 시세는 포함하지 않음).
+
+## R2 — 2차 후보 전략 (`config/r2_*.yaml`, `src/research/r2.py`)
+
+P0 결론(현재 전략 우위 없음) 이후, 수익 개선 후보 4개를 같은 원칙(사전 등록 → 학습 → 검증 1회)으로 비교한다. 튜닝 없음.
+
+| 후보 | 규칙 | 실행 |
+|------|------|------|
+| A 레버리지+추세 | 국내 2배·미국 2배 50:50, 신호 지수 < SMA200이면 해당 절반을 국고채3년으로 | `rotation.run_rotation` |
+| B 듀얼 모멘텀 | 매월 말 KODEX 200·미국 S&P500 중 12개월 수익률 최고가 채권보다 높으면 그 자산, 아니면 채권 | `rotation.run_rotation` |
+| C 단기 모멘텀 | 시총 상위 100 중 160일 수익률 상위 4종목, 5거래일마다 교체 | `engine.Engine(MomentumSpec)` |
+| D 변동성 돌파 | KODEX 레버리지, 시가 + 0.5 x 전일 범위 돌파 시 매수, 다음 날 시가 매도 | `rotation.run_breakout` |
+
+- 기준: B1(KODEX 200 보유), B4(KODEX 200·미국 S&P500 50:50 월 리밸런싱). 게이트 T1(Sharpe)·T2(CAGR) 모두 기준 초과.
+- 국내 ETF는 yfinance 실제 시세, 미국 ETF는 S&P500 총수익 지수 x 원/달러(FRED)로 국내 상장 환노출 ETF를 합성한다
+  (한국 거래일 d에는 d 이전 미국 종가만 사용). 해외지수·채권 ETF는 이익 난 매도마다 15.4% 과세.
+
+```bash
+.venv/bin/python scripts/run_r2.py train
+.venv/bin/python scripts/run_r2.py test   # 게이트 통과 후보가 있을 때만, 단 1회
+```
