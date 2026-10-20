@@ -20,6 +20,7 @@
 
 ## Android
 - [ ] `cd android && ./gradlew test` 통과 (android/ 또는 shared/fixtures 변경 시)
+- [ ] `engine`: 주문 전송 경로를 바꿨다면 응답 유실·미접수·거부·다음 날 재개 테스트가 여전히 있는지 (`MonthlyRunnerTest`)
 - [ ] `kis`: 주문·취소 POST는 네트워크 오류 시 재전송하지 않는다 (OkHttp `retryOnConnectionFailure(false)` 유지). 새 KIS API는 `kis-api-spec.md`에서 모의투자 지원 확인
 
 ## DB 마이그레이션

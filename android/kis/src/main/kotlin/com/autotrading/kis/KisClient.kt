@@ -66,16 +66,25 @@ class KisClient internal constructor(
     }
 
     /**
-     * 시장가 주문. [KisException.Transport]가 나면 접수됐을 수 있으니 재주문하지 말고 [orders]로 확인한다.
+     * 시장가 주문 (매도용). 시장가 매수는 상한가 기준으로 주문금액을 잡으므로 매수는 [placeLimitOrder]를 쓴다.
+     * [KisException.Transport]가 나면 접수됐을 수 있으니 재주문하지 말고 [orders]로 확인한다.
      */
-    fun placeMarketOrder(code: String, side: Side, qty: Int): OrderReceipt {
+    fun placeMarketOrder(code: String, side: Side, qty: Int): OrderReceipt = place(code, side, qty, MARKET, "0")
+
+    /** 지정가 주문. 매도호가보다 높은 가격이면 즉시 매도호가에 체결되고, 주문금액은 지정가로 잡힌다. */
+    fun placeLimitOrder(code: String, side: Side, qty: Int, price: Long): OrderReceipt {
+        require(price > 0) { "지정가는 0보다 커야 함: $price" }
+        return place(code, side, qty, LIMIT, price.toString())
+    }
+
+    private fun place(code: String, side: Side, qty: Int, dvsn: String, price: String): OrderReceipt {
         requireCode(code)
         require(qty > 0) { "주문 수량은 1 이상: $qty" }
         val body = accountParams() + mapOf(
             "PDNO" to code,
-            "ORD_DVSN" to MARKET,
+            "ORD_DVSN" to dvsn,
             "ORD_QTY" to qty.toString(),
-            "ORD_UNPR" to "0",
+            "ORD_UNPR" to price,
         )
         val tr = if (side == Side.SELL) env.sellTr else env.buyTr
         val out = http.post(ORDER_PATH, tr, body).body.single("output")
@@ -107,7 +116,7 @@ class KisClient internal constructor(
         val body = accountParams() + mapOf(
             "KRX_FWDG_ORD_ORGNO" to receipt.orgNo,
             "ORGN_ODNO" to receipt.orderNo,
-            "ORD_DVSN" to "00",
+            "ORD_DVSN" to LIMIT,
             "RVSE_CNCL_DVSN_CD" to "02",
             "ORD_QTY" to "0",
             "ORD_UNPR" to "0",
@@ -125,6 +134,7 @@ class KisClient internal constructor(
         }
         return OrderStatus(
             orderNo = row.text("odno"),
+            orgNo = row.text("ord_gno_brno"),
             originalOrderNo = row.text("orgn_odno").trim().takeIf { it.isNotEmpty() && it.any { c -> c != '0' } },
             code = row.text("pdno"),
             side = side,
@@ -179,6 +189,7 @@ class KisClient internal constructor(
         private const val CANCEL_PATH = "uapi/domestic-stock/v1/trading/order-rvsecncl"
         private const val DAILY_TR = "FHKST01010400" // 모의·실전 공통
         private const val MARKET = "01"
+        private const val LIMIT = "00"
         private const val MAX_PAGES = 20
         private val MORE = setOf("F", "M")
         private val DATE = DateTimeFormatter.BASIC_ISO_DATE

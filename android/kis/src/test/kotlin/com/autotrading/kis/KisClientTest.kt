@@ -106,6 +106,18 @@ class KisClientTest {
     }
 
     @Test
+    fun `지정가 매수는 주문구분 00과 가격을 보낸다`() {
+        kis.enqueue(ok(""""output":{"KRX_FWDG_ORD_ORGNO":"06010","ODNO":"0001569159","ORD_TMD":"091002"}"""))
+
+        kis.client.placeLimitOrder("360750", Side.BUY, 5, 22_090)
+
+        val body = kis.takeApi().body.readUtf8()
+        assertTrue(""""ORD_DVSN":"00"""" in body, body)
+        assertTrue(""""ORD_UNPR":"22090"""" in body, body)
+        assertThrows<IllegalArgumentException> { kis.client.placeLimitOrder("360750", Side.BUY, 5, 0) }
+    }
+
+    @Test
     fun `잘못된 종목코드·수량은 보내기 전에 막는다`() {
         assertThrows<IllegalArgumentException> { kis.client.placeMarketOrder("69500", Side.BUY, 1) }
         assertThrows<IllegalArgumentException> { kis.client.placeMarketOrder("069500", Side.BUY, 0) }
@@ -119,7 +131,7 @@ class KisClientTest {
                 """"ctx_area_fk100":"","ctx_area_nk100":"","output1":[
                 {"odno":"0000000001","orgn_odno":"","pdno":"114260","sll_buy_dvsn_cd":"01","ord_qty":"4",
                  "tot_ccld_qty":"4","cnc_cfrm_qty":"0","rjct_qty":"0","avg_prvs":"113405.0000"},
-                {"odno":"0000000002","orgn_odno":"","pdno":"069500","sll_buy_dvsn_cd":"02","ord_qty":"10",
+                {"odno":"0000000002","ord_gno_brno":"06010","orgn_odno":"","pdno":"069500","sll_buy_dvsn_cd":"02","ord_qty":"10",
                  "tot_ccld_qty":"6","cnc_cfrm_qty":"0","rjct_qty":"0","avg_prvs":"35300"},
                 {"odno":"0000000003","orgn_odno":"0000000002","pdno":"069500","sll_buy_dvsn_cd":"02","ord_qty":"4",
                  "tot_ccld_qty":"0","cnc_cfrm_qty":"4","rjct_qty":"0","avg_prvs":"0"}],
@@ -136,6 +148,7 @@ class KisClientTest {
         assertFalse(partial.isSettled)
         assertEquals(4, partial.openQty)
         assertEquals(Side.BUY, partial.side)
+        assertEquals(OrderReceipt("0000000002", "06010", "069500", Side.BUY, 10), partial.receipt())
         assertEquals("0000000002", cancel.originalOrderNo)
         val request = kis.takeApi()
         assertEquals("VTTC0081R", request.getHeader("tr_id"))
