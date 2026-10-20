@@ -1,4 +1,4 @@
-.PHONY: backend frontend dev install test test-unit test-integration lint fmt \
+.PHONY: android-test backend frontend dev install test test-unit test-integration lint fmt \
 	research-install research-test research-lint research-fmt
 
 backend:
@@ -40,3 +40,6 @@ research-lint:
 
 research-fmt:
 	cd research && .venv/bin/ruff format src/ tests/ scripts/
+
+android-test:
+	cd android && ./gradlew :core:test

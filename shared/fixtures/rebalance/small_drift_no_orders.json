@@ -1,0 +1,44 @@
+{
+  "expected": {
+    "buys": [],
+    "cash_after_sells": 30000.0,
+    "equity": 9937935.0,
+    "holdings_after_sells": {
+      "069500": 141,
+      "360750": 226
+    },
+    "sells": [],
+    "targets": {
+      "069500": 140,
+      "360750": 226
+    }
+  },
+  "input": {
+    "cash": 30000.0,
+    "holdings": {
+      "069500": 141,
+      "360750": 226
+    },
+    "managed_codes": [
+      "069500",
+      "114260",
+      "360750"
+    ],
+    "params": {
+      "cash_buffer": 0.005,
+      "cost_reserve": 0.002,
+      "min_order_fraction": 0.01
+    },
+    "prices": {
+      "069500": 35215.0,
+      "114260": 113405.0,
+      "360750": 21870.0
+    },
+    "weights": {
+      "069500": 0.5,
+      "360750": 0.5
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

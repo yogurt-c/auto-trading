@@ -16,6 +16,7 @@ import pandas as pd
 from app.domain.trading_strategy.services import EntryGate, OrderSizer, StrategyEvaluator
 from app.domain.trading_strategy.value_objects import EvaluationResult, MarketData
 from app.infrastructure.indicators import INDICATOR_LOOKBACK_BARS, build_market_data
+from research import config, rebalance
 
 SCHEMA_VERSION = 1
 
@@ -127,6 +128,103 @@ def sizer_cases() -> dict[str, dict]:
     }
 
 
+# 백테스트 자산 → 앱이 주문하는 국내 상장 ETF 종목코드
+APP_ETF_CODES = {"kr_1x": "069500", "us_1x": "360750", "bond": "114260"}
+
+
+def app_profiles() -> dict[str, dict[str, float]]:
+    """앱 성향 → {종목코드: 비중}. 기준: config/r3_profiles.yaml(안정형) · r4_conservative.yaml(보수형)."""
+    raw = {
+        "stable": config.load("r3_profiles")["profiles"]["stable"],
+        "conservative": config.load("r4_conservative")["profile"],
+    }
+    return {
+        name: {APP_ETF_CODES[asset]: w for asset, w in weights.items()}
+        for name, weights in raw.items()
+    }
+
+
+PRICES = {"069500": 35_215.0, "360750": 21_870.0, "114260": 113_405.0}
+
+
+def rebalance_cases() -> dict[str, dict]:
+    """이름 → (성향, 보유, 예수금, 매도 후 예수금 가정). 가격은 전일 종가."""
+    profiles = app_profiles()
+    stable, conservative = profiles["stable"], profiles["conservative"]
+    return {
+        "first_run_cash_only": {"weights": stable, "holdings": {}, "cash": 10_000_000.0},
+        "monthly_deposit_buys_only": {
+            "weights": stable,
+            "holdings": {"069500": 140, "360750": 225},
+            "cash": 1_000_000.0,
+        },
+        "drift_sell_one_buy_other": {
+            "weights": stable,
+            "holdings": {"069500": 90, "360750": 330},
+            "cash": 12_000.0,
+        },
+        "small_drift_no_orders": {
+            "weights": stable,
+            "holdings": {"069500": 141, "360750": 226},
+            "cash": 30_000.0,
+        },
+        "switch_stable_to_conservative": {
+            "weights": conservative,
+            "holdings": {"069500": 140, "360750": 225},
+            "cash": 20_000.0,
+        },
+        "switch_conservative_to_stable_dust_bond_sold": {
+            "weights": stable,
+            "holdings": {"069500": 140, "360750": 226, "114260": 1},
+            "cash": 5_000.0,
+        },
+        "other_stock_ignored": {
+            "weights": stable,
+            "holdings": {"005930": 50, "069500": 70, "360750": 110},
+            "cash": 2_500_000.0,
+        },
+        "cash_short_after_sells_truncates_last_buy": {
+            "weights": conservative,
+            "holdings": {"069500": 280, "360750": 0},
+            "cash": 100_000.0,
+            "cash_after_sells": 4_000_000.0,
+        },
+    }
+
+
+def _rebalance_expected(case: dict) -> dict:
+    managed = set(APP_ETF_CODES.values())
+    holdings, weights = case["holdings"], case["weights"]
+    equity = rebalance.managed_equity(holdings, PRICES, case["cash"], managed)
+    targets = rebalance.target_shares(weights, equity, PRICES, rebalance.CASH_BUFFER)
+    sells = rebalance.plan_sells(
+        holdings, targets, PRICES, equity, managed, rebalance.MIN_ORDER_FRACTION
+    )
+    after = dict(holdings)
+    proceeds = 0.0
+    for o in sells:
+        after[o.code] -= o.qty
+        proceeds += o.qty * PRICES[o.code]
+    cash_after = case.get("cash_after_sells", case["cash"] + proceeds)
+    buys = rebalance.plan_buys(
+        after,
+        targets,
+        PRICES,
+        cash_after,
+        equity,
+        rebalance.MIN_ORDER_FRACTION,
+        rebalance.COST_RESERVE,
+    )
+    return {
+        "equity": equity,
+        "targets": targets,
+        "sells": [{"code": o.code, "qty": o.qty} for o in sells],
+        "holdings_after_sells": after,
+        "cash_after_sells": cash_after,
+        "buys": [{"code": o.code, "qty": o.qty} for o in buys],
+    }
+
+
 def build_all() -> dict[str, dict[str, dict]]:
     """카테고리 → 파일 이름 → 내용."""
     evaluator, gate, sizer = StrategyEvaluator(), EntryGate(), OrderSizer()
@@ -169,6 +267,27 @@ def build_all() -> dict[str, dict[str, dict]]:
                 "input": {"sell": {"shares": shares, "sell_ratio": ratio}},
                 "expected": qty,
             }
+
+    out["profiles"] = {"app_profiles": {"input": {}, "expected": app_profiles()}}
+    params = {
+        "cash_buffer": rebalance.CASH_BUFFER,
+        "min_order_fraction": rebalance.MIN_ORDER_FRACTION,
+        "cost_reserve": rebalance.COST_RESERVE,
+    }
+    out["rebalance"] = {
+        name: {
+            "input": {
+                "weights": case["weights"],
+                "holdings": case["holdings"],
+                "prices": PRICES,
+                "cash": case["cash"],
+                "managed_codes": sorted(APP_ETF_CODES.values()),
+                "params": params,
+            },
+            "expected": _rebalance_expected(case),
+        }
+        for name, case in rebalance_cases().items()
+    }
     return out
 
 

@@ -10,7 +10,7 @@ import shutil
 from research.fixtures import write_all
 from research.paths import FIXTURES_DIR
 
-CATEGORIES = ("indicators", "evaluator", "gate", "sizer")
+CATEGORIES = ("indicators", "evaluator", "gate", "sizer", "profiles", "rebalance")
 
 
 def main() -> None:
