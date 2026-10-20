@@ -26,7 +26,7 @@ core/    순수 Kotlin (Android 의존 없음) — JVM 단위 테스트
   TradingCalendar    (내장 휴장일 krx_holidays.json + 월 첫 거래일 계산)
 kis/     KIS REST 클라이언트 (OkHttp + kotlinx.serialization) — MockWebServer 테스트
 engine/  MonthlyRun 유스케이스 — 상태 기계, 재시도, 멱등성
-app/     Compose UI, 스케줄링(AlarmManager), Keystore, Room, 알림
+app/     Compose UI, 스케줄링(AlarmManager), Keystore, 알림
 ```
 
 의존 방향: `app → engine → (core, kis)`, `kis → core`(모델만).
@@ -51,7 +51,7 @@ app/     Compose UI, 스케줄링(AlarmManager), Keystore, Room, 알림
 
 ## 4. 월 실행 상태 기계 (engine)
 
-`run_key = YYYY-MM` 당 1회. 상태를 Room에 저장해 앱이 죽어도 이어서 진행·중복 주문 방지.
+`run_key = YYYY-MM` 당 1회. 상태를 파일(`FileRunStore`)에 저장해 앱이 죽어도 이어서 진행·중복 주문 방지.
 
 ```
 SCHEDULED → CHECKED_OPEN → PLANNED → SELLS_SENT → SELLS_SETTLED → BUYS_SENT → DONE
@@ -68,7 +68,7 @@ SCHEDULED → CHECKED_OPEN → PLANNED → SELLS_SENT → SELLS_SETTLED → BUYS
 - 주문은 보내기 **전에** 기록(주문번호 없음)한다. 응답을 잃으면 다음 실행 때 주문체결조회에서 같은 종목·방향·수량의 짝 없는 주문을 찾아 붙이고, 없으면 접수 안 된 것으로 보고 다시 보낸다
 - 매수 계획은 매도 체결 후 한 번만 계산해 저장한다 (다시 계산하면 이미 보낸 매수를 중복할 수 있음)
 - 새 주문은 09:05~15:00에만. 거래일이 바뀐 채 재개되면 전날 주문을 확정(당일 주문은 장 마감에 소멸)하고 오늘 잔고로 처음부터 다시 계획한다
-- 저장 형식: `MonthlyRun.toJson()` (app의 Room에는 month → JSON)
+- 저장 형식: `MonthlyRun.toJson()` → `filesDir/runs/run-YYYY-MM.json` (`FileRunStore`: 임시 파일 + fsync + 원자적 이름 변경). Room은 쓰지 않는다 — 달 → JSON 한 덩어리뿐이라 DB가 필요 없다
 
 ## 5. 스케줄링
 
@@ -76,11 +76,25 @@ SCHEDULED → CHECKED_OPEN → PLANNED → SELLS_SENT → SELLS_SETTLED → BUYS
 - 폰이 꺼져 있었거나 알람을 놓친 경우: 부팅·앱 실행 시 이번 달 run이 DONE이 아니고 장중이면 즉시 실행, 장 마감 후면 다음 거래일 09:10
 - 배터리 최적화 예외 요청 (안내 화면)
 
+구현 (`engine/RunSchedule` — JVM 테스트, `app`은 연결만):
+- 실행은 항상 "그 시각이 속한 달"의 run. 다음 시각: `Done`·`Failed` → 다음 달 첫 거래일 09:10, `Postponed(d)` → d 09:10, `RetryLater(t)` → t
+- 깨어날 때(`onWake`: 부팅·앱 업데이트·앱 실행·자동 실행 켜기): 이번 달이 끝났으면 다음 달, 아니면 장중 지금 / 장 전 09:10 / 그 외 다음 거래일 09:10
+- 알람(`setExactAndAllowWhileIdle`) → `AlarmReceiver` → `RunService`(foreground, type dataSync) 작업 스레드에서 `MonthlyRunner.execute`. 정확한 알람이어야 백그라운드에서 foreground service를 시작할 수 있다 — 13+는 `USE_EXACT_ALARM`, 12는 `SCHEDULE_EXACT_ALARM`
+- 실행 시작 때 15분 뒤 watchdog 알람을 먼저 건다 → 실행 중 프로세스가 죽어도 이어서 진행. 이미 실행 중이면 새 요청은 무시하고 watchdog만 미룬다
+- 부팅 때는 알람만 다시 건다 (Android 15는 BOOT_COMPLETED에서 dataSync 시작 금지)
+
 ## 6. 보안
 
 - 앱키·시크릿·계좌번호·토큰: Android Keystore의 AES-GCM 키로 암호화해 저장. 백업 제외 (`allowBackup=false`)
 - 로그·알림·화면에 키·토큰 노출 금지, 계좌번호는 마스킹
 - 모의/실전 전환: 실전은 기본 잠금, 해제 시 경고 화면
+
+구현 (`app`):
+- `SecretBox`: Keystore AES-256-GCM 키(기기 밖 반출 불가)로 파일 1개 암호화, `AtomicFile`. 풀 수 없으면(키 초기화) 다시 입력받는다
+- 키·계좌(`kis.bin`)와 토큰(`token.bin`)은 별도 파일. 키를 바꾸면 토큰을 지운다. 키는 잔고 조회로 확인한 뒤에만 저장
+- `allowBackup=false` + `dataExtractionRules`로 클라우드 백업·기기 간 이전 모두 제외 (12+는 allowBackup만으로 기기 간 이전을 막지 못함). 평문 HTTP 금지
+- 예상하지 못한 예외는 메시지 대신 예외 종류만 화면·알림에 남긴다
+- 실전 잠금 해제 화면은 아직 없다 — `AppGraph.ENV = PAPER` 고정, P5 이후에 연다
 
 ## 7. 화면
 
@@ -89,6 +103,8 @@ SCHEDULED → CHECKED_OPEN → PLANNED → SELLS_SENT → SELLS_SETTLED → BUYS
 3. 홈: 다음 실행일, 현재 비중 vs 목표 비중, 평가액
 4. 기록: 월별 실행 결과·체결 내역
 5. 설정: 성향 변경(월 1회), 실행 시각, 모의/실전, 키 재설정
+
+구현: 키 입력 → 성향 선택 → 탭 4개(홈·성향·기록·설정). 홈은 자동 실행 스위치·다음 실행 시각·최근 결과·지금 실행·이번 달 주문/체결. 실행 시각은 09:10 고정. 현재 비중 vs 목표 비중(실시간 평가액)은 아직 없다 — 이번 달 run의 총자산·목표 수량을 보여준다
 
 ## 8. 검증
 
@@ -107,4 +123,4 @@ SCHEDULED → CHECKED_OPEN → PLANNED → SELLS_SENT → SELLS_SETTLED → BUYS
 
 ## 기술 선택
 
-Kotlin 2.x, Jetpack Compose, Room, OkHttp, kotlinx.serialization, coroutines. DI는 수동 생성(규모가 작음). minSdk 26.
+Kotlin 2.1, AGP 8.7, Jetpack Compose (Material3), OkHttp, kotlinx.serialization, coroutines. DI는 수동 생성(`AppGraph`). minSdk 26, targetSdk 35.

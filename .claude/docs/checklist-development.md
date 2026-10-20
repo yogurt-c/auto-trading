@@ -19,7 +19,8 @@
 - [ ] `research/src/research/rebalance.py`·성향 비중(`config/r3_profiles.yaml`, `r4_conservative.yaml`)을 바꿨다면 fixture 재생성 후 Android `core`도 같이 수정
 
 ## Android
-- [ ] `cd android && ./gradlew test` 통과 (android/ 또는 shared/fixtures 변경 시)
+- [ ] `cd android && ./gradlew test :app:assembleDebug :app:lintDebug` 통과 (android/ 또는 shared/fixtures 변경 시, Android SDK 필요 — `local.properties`의 `sdk.dir`)
+- [ ] `app`: 키·토큰·계좌번호를 로그·알림·화면에 남기지 않는가 (계좌는 `Account.masked`만), 실전 잠금(`AppGraph.ENV`) 유지
 - [ ] `engine`: 주문 전송 경로를 바꿨다면 응답 유실·미접수·거부·다음 날 재개 테스트가 여전히 있는지 (`MonthlyRunnerTest`)
 - [ ] `kis`: 주문·취소 POST는 네트워크 오류 시 재전송하지 않는다 (OkHttp `retryOnConnectionFailure(false)` 유지). 새 KIS API는 `kis-api-spec.md`에서 모의투자 지원 확인
 
