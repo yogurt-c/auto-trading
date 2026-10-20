@@ -71,9 +71,13 @@ def stress_assets(r2_cfg: dict, stress: dict) -> tuple[pd.DatetimeIndex, dict[st
 
 
 def run_profiles(
-    lab: R2Lab, prices: dict[str, pd.DataFrame], days: pd.DatetimeIndex
+    lab: R2Lab,
+    prices: dict[str, pd.DataFrame],
+    days: pd.DatetimeIndex,
+    profiles: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, pd.Series]:
-    profiles = config.load("r3_profiles")["profiles"]
+    """성향별 고정 비중 월 리밸런싱 평가액. profiles 기본값 = R3 안정형·공격형."""
+    profiles = profiles or {n: config.load("r3_profiles")["profiles"][n] for n in PROFILES}
     return {
         name: run_rotation(
             name,
@@ -83,7 +87,7 @@ def run_profiles(
             lab.capital,
             lab.asset_costs,
         ).equity
-        for name in PROFILES
+        for name in profiles
     }
 
 

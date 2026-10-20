@@ -260,3 +260,20 @@ class TestR3Stats:
         rate = pd.Series([25.2], index=pd.to_datetime(["2020-01-01"]))  # 월초(휴일) 값 하나
         lev = leveraged_index(tr, rate, 2, 0.0)
         assert lev.iloc[-1] == pytest.approx(0.999**2)
+
+
+class TestBondProxy:
+    def test_carry_and_duration(self):
+        from research.r4 import bond_proxy
+
+        rate = pd.Series(
+            [12.0, 12.0, 13.0], index=pd.to_datetime(["2020-01-01", "2020-02-01", "2020-03-01"])
+        )
+        cal = pd.DatetimeIndex(
+            pd.to_datetime(["2020-01-02", "2020-02-03", "2020-02-04", "2020-03-02"])
+        )
+        out = bond_proxy(rate, cal, duration=2.0, annual_drag=0.0)["close"]
+        # 1월: 전월 금리 없음 → 0. 2월: 12%/12 = 1% (이틀에 나눔). 3월: 1% - 2 * 1%p = -1%
+        assert out.iloc[0] == pytest.approx(10_000)
+        assert out.iloc[2] == pytest.approx(10_100)
+        assert out.iloc[3] == pytest.approx(10_100 * 0.99)
