@@ -236,3 +236,27 @@ class TestMomentumEngine:
         result = engine.run(MomentumSpec("m", 2, 1, 2, 0.0), days[0], days[-1])
         # day2 판단: a 0% (분할 조정) vs b -1% → a
         assert result.fills[0].code == "a"
+
+
+class TestR3Stats:
+    def test_longest_recovery_counts_until_new_high(self):
+        from research.r3 import longest_recovery_days
+
+        days = pd.to_datetime(["2020-01-01", "2020-01-11", "2020-01-31", "2020-02-10"])
+        equity = pd.Series([100, 80, 100, 90], index=days)
+        # 1/1 고점 → 1/31 회복: 30일. 1/31 고점 → 끝(2/10) 미회복: 10일
+        assert longest_recovery_days(equity) == 30
+
+    def test_unrecovered_drawdown_runs_to_end(self):
+        from research.r3 import longest_recovery_days
+
+        days = pd.to_datetime(["2020-01-01", "2020-03-01"])
+        assert longest_recovery_days(pd.Series([100, 50], index=days)) == 60
+
+    def test_leveraged_index_fills_monthly_rate(self):
+        tr = pd.Series(
+            [100.0, 100.0, 100.0], index=pd.to_datetime(["2020-01-02", "2020-01-03", "2020-02-03"])
+        )
+        rate = pd.Series([25.2], index=pd.to_datetime(["2020-01-01"]))  # 월초(휴일) 값 하나
+        lev = leveraged_index(tr, rate, 2, 0.0)
+        assert lev.iloc[-1] == pytest.approx(0.999**2)

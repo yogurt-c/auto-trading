@@ -43,7 +43,7 @@ def fetch_yf(ticker: str, start: str, end: str) -> pd.DataFrame:
             {col.lower(): data[col].squeeze() for col in ("Open", "High", "Low", "Close")}
         )
 
-    return _cached(ticker.replace("^", "").replace(".", "_"), fetch)
+    return _cached(f"{ticker.replace('^', '').replace('.', '_')}_{start}", fetch)
 
 
 def fetch_fred(series: str, start: str, end: str) -> pd.Series:
@@ -53,7 +53,7 @@ def fetch_fred(series: str, start: str, end: str) -> pd.Series:
         df = pd.read_csv(StringIO(resp.text), parse_dates=["observation_date"], na_values=".")
         return df.set_index("observation_date").rename(columns={series: "value"})
 
-    return _cached(f"fred_{series}", fetch)["value"].dropna()
+    return _cached(f"fred_{series}_{start}", fetch)["value"].dropna()
 
 
 def remove_spikes(df: pd.DataFrame) -> pd.DataFrame:
@@ -83,7 +83,9 @@ def leveraged_index(
 ) -> pd.Series:
     """일간 재조정 레버리지 지수 (미국 거래일 기준, 시작값 1)."""
     r = total_return.pct_change().fillna(0.0)
-    rf = (rate_pct.reindex(r.index).ffill().bfill() / 100) / 252
+    # 월별·휴일 결측 금리는 직전 값으로 (거래일과 날짜가 안 겹쳐도 되도록 합집합에서 채움)
+    rate = rate_pct.reindex(rate_pct.index.union(r.index)).ffill().bfill().reindex(r.index)
+    rf = (rate / 100) / 252
     daily = leverage * r - (leverage - 1) * rf - annual_drag / 252
     daily.iloc[0] = 0.0
     return (1 + daily).cumprod()
