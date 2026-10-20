@@ -1,0 +1,13 @@
+{
+  "expected": 30,
+  "input": {
+    "buy": {
+      "available_cash": 305000,
+      "max_position": 3000000,
+      "position_value": 0,
+      "price": 10000
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

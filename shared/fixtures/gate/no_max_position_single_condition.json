@@ -1,0 +1,18 @@
+{
+  "expected": {
+    "blocked_reason": null,
+    "entry_allowed": true
+  },
+  "input": {
+    "position_value": 1000000000000.0,
+    "result": {
+      "entry_triggered": true,
+      "signal_score": 1.0
+    },
+    "strategy": {
+      "entry_rsi_below": 30.0
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

@@ -1,0 +1,11 @@
+{
+  "expected": 1,
+  "input": {
+    "sell": {
+      "sell_ratio": 0.5,
+      "shares": 1
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

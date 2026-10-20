@@ -1,0 +1,20 @@
+{
+  "expected": {
+    "blocked_reason": null,
+    "entry_allowed": true
+  },
+  "input": {
+    "position_value": 0.0,
+    "result": {
+      "entry_triggered": true,
+      "signal_score": 0.5
+    },
+    "strategy": {
+      "entry_rsi_below": 55.0,
+      "entry_volume_surge": 2.0,
+      "max_position": 3000000.0
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}

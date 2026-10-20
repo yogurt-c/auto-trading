@@ -13,6 +13,10 @@
 - [ ] `make test` 전체 통과
 - [ ] `cd frontend && npm run build` TypeScript 오류 없음
 
+## shared/fixtures
+- [ ] `backend/app/domain/` 또는 `backend/app/infrastructure/indicators.py`를 바꿨다면 같은 커밋에서 `cd research && .venv/bin/python scripts/gen_fixtures.py` 실행
+- [ ] `make research-test` 통과 (research/ 또는 fixtures 변경 시)
+
 ## DB 마이그레이션
 - [ ] `backend/app/infrastructure/models.py` 변경 시 alembic revision 파일 생성했는가
 

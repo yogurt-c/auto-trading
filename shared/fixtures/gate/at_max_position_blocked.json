@@ -1,0 +1,20 @@
+{
+  "expected": {
+    "blocked_reason": "포지션 한도 초과로 매수 차단: 현재 3,000,000 >= 한도 3,000,000",
+    "entry_allowed": false
+  },
+  "input": {
+    "position_value": 3000000.0,
+    "result": {
+      "entry_triggered": true,
+      "signal_score": 1.0
+    },
+    "strategy": {
+      "entry_rsi_below": 55.0,
+      "entry_volume_surge": 2.0,
+      "max_position": 3000000.0
+    }
+  },
+  "lookback_bars": 250,
+  "schema_version": 1
+}
