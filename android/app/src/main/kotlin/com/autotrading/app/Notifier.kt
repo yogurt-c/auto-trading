@@ -34,7 +34,12 @@ class Notifier(private val context: Context) {
         .setContentIntent(openApp())
         .build()
 
-    fun result(text: String) {
+    fun result(text: String) = post(RESULT_ID, text, alertOnce = false)
+
+    /** 예상하지 못한 오류 — 10분마다 재시도하므로 같은 알림을 갱신만 하고 소리는 한 번만. */
+    fun error(text: String) = post(ERROR_ID, text, alertOnce = true)
+
+    private fun post(id: Int, text: String, alertOnce: Boolean) {
         val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
@@ -45,9 +50,10 @@ class Notifier(private val context: Context) {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setAutoCancel(true)
+            .setOnlyAlertOnce(alertOnce)
             .setContentIntent(openApp())
             .build()
-        NotificationManagerCompat.from(context).notify(RESULT_ID, notification)
+        NotificationManagerCompat.from(context).notify(id, notification)
     }
 
     private fun openApp(): PendingIntent = PendingIntent.getActivity(
@@ -60,6 +66,7 @@ class Notifier(private val context: Context) {
     companion object {
         const val RUNNING_ID = 1
         private const val RESULT_ID = 2
+        private const val ERROR_ID = 3
         private const val RUNNING = "running"
         private const val RESULT = "result"
     }

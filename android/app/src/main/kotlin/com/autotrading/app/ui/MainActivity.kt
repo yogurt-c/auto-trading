@@ -1,6 +1,7 @@
 package com.autotrading.app.ui
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -22,7 +23,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -80,9 +83,9 @@ private fun MainTabs(state: UiState, viewModel: AppViewModel) {
     ) { padding ->
         Box(Modifier.padding(padding)) {
             when (Tab.entries[tab]) {
-                Tab.HOME -> HomeScreen(state, viewModel::setAutoRun, viewModel::runNow)
+                Tab.HOME -> HomeScreen(state, viewModel::setAutoRun, viewModel::runNow, viewModel::retry)
                 Tab.PROFILE -> ProfileScreen(state, viewModel::selectProfile, Modifier)
-                Tab.HISTORY -> HistoryScreen(state.history)
+                Tab.HISTORY -> HistoryScreen(state.history, state.unreadable, state.month)
                 Tab.SETTINGS -> SettingsScreen(state, viewModel::resetKeys)
             }
         }
@@ -106,8 +109,13 @@ private fun RefreshWhileVisible(viewModel: AppViewModel) {
 @Composable
 private fun RequestNotificationPermission() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    LaunchedEffect(Unit) { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
 }
 
 private const val REFRESH_MILLIS = 5_000L

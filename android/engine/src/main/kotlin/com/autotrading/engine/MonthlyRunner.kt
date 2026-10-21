@@ -83,6 +83,31 @@ class MonthlyRunner(
         }
     }
 
+    /**
+     * 실패한 달을 그날 잔고로 처음부터 다시 진행한다 (주문 기록은 남긴다). 실패한 날이 오늘이면 주문을 다시 조회해
+     * 아직 미체결이 있을 때 — 취소가 안 돼 체결될 수 있으므로 — 새 주문을 내지 않고 거부한다.
+     * 실패한 run이 아니면 [execute]와 같다.
+     */
+    fun retry(month: YearMonth, profile: Profile): Outcome {
+        val run = store.load(month)
+        if (run == null || run.state != RunState.FAILED) return execute(month, profile)
+        val day = run.tradeDate
+        val checked = try {
+            if (day == null) run else refresh(reconcile(run, day), day)
+        } catch (e: KisException) {
+            return Outcome.Failed(run.copy(failure = "다시 시도 전 주문 확인 실패: ${e.message}"))
+        }
+        // 지난 거래일의 미체결 주문은 장 마감에 소멸했다
+        val open = if (day == today()) checked.orders.filter { it.date == day && it.open } else emptyList()
+        if (open.isNotEmpty()) {
+            val detail = open.joinToString { "${it.code} ${it.side} ${it.qty - it.filledQty}주" }
+            return Outcome.Failed(checked.copy(failure = "미체결 주문이 남아 있어 다시 시도하지 않습니다: $detail"))
+        }
+        val closed = checked.orders.map { it.copy(open = false) }
+        store.save(MonthlyRun(month, run.profile, orders = closed, attempt = run.attempt + 1))
+        return execute(month, profile)
+    }
+
     private fun advance(run: MonthlyRun): Step {
         val today = today()
         if (run.tradeDate != null && run.tradeDate != today) return Step.Next(rollover(run, run.tradeDate))
@@ -154,7 +179,7 @@ class MonthlyRunner(
         tradingWindow(today)?.let { return Step.Stop(it) }
         var r = reconcile(run, today)
         for (order in planned ?: r.plannedBuys.orEmpty()) {
-            if (r.orders.none { it.date == today && it.code == order.code && it.side == order.side }) {
+            if (r.ordersOf(today).none { it.code == order.code && it.side == order.side }) {
                 r = place(r, today, order)
             }
         }
@@ -164,7 +189,7 @@ class MonthlyRunner(
     private fun place(run: MonthlyRun, today: LocalDate, order: PlannedOrder): MonthlyRun {
         check(order.code in Etf.codes) { "성향 ETF가 아닌 종목 주문: ${order.code}" }
         check(run.orders.count { it.date == today } < MAX_DAILY_ORDERS) { "하루 주문 ${MAX_DAILY_ORDERS}건 초과" }
-        val record = OrderRecord(today, order.code, order.side, order.qty, order.limitPrice)
+        val record = OrderRecord(today, order.code, order.side, order.qty, order.limitPrice, attempt = run.attempt)
         val sending = run.copy(orders = run.orders + record).also(store::save)
         val receipt = try {
             when (order.side) {
@@ -216,14 +241,14 @@ class MonthlyRunner(
         var r = reconcile(run, today)
         val sendState = if (side == Side.SELL) RunState.PLANNED else RunState.SELLS_SETTLED
         val planned = if (side == Side.SELL) r.plannedSells.orEmpty() else r.plannedBuys.orEmpty()
-        if (planned.any { p -> r.orders.none { it.date == today && it.code == p.code && it.side == side } }) {
+        if (planned.any { p -> r.ordersOf(today).none { it.code == p.code && it.side == side } }) {
             return Step.Next(r.copy(state = sendState)) // 접수되지 않은 주문이 있다 — 다시 보낸다
         }
         val next = if (side == Side.SELL) RunState.SELLS_SETTLED else RunState.DONE
         val deadline = checkNotNull(r.phaseStartedAt) { "phaseStartedAt 없음" }.plus(SETTLE_TIMEOUT)
         while (true) {
             r = refresh(r, today)
-            val open = r.orders.filter { it.date == today && it.side == side && it.open }
+            val open = r.ordersOf(today).filter { it.side == side && it.open }
             if (open.isEmpty()) return Step.Next(r.copy(state = next, phaseStartedAt = null))
             if (!clock.instant().isBefore(deadline)) return cancelAndFail(r, today, side, open)
             sleeper.sleep(POLL.toMillis())
@@ -239,7 +264,7 @@ class MonthlyRunner(
             }
         }
         val r = refresh(run, today)
-        val unfilled = r.orders.filter { it.date == today && it.side == side && it.filledQty < it.qty }
+        val unfilled = r.ordersOf(today).filter { it.side == side && it.filledQty < it.qty }
         if (unfilled.isEmpty()) {
             val next = if (side == Side.SELL) RunState.SELLS_SETTLED else RunState.DONE
             return Step.Next(r.copy(state = next, phaseStartedAt = null))
@@ -252,7 +277,7 @@ class MonthlyRunner(
     private fun rollover(run: MonthlyRun, day: LocalDate): MonthlyRun {
         val reconciled = refresh(reconcile(run, day), day)
         val orders = reconciled.orders.map { if (it.date == day) it.copy(open = false) else it }
-        return MonthlyRun(run.month, run.profile, orders = orders)
+        return MonthlyRun(run.month, run.profile, orders = orders, attempt = run.attempt)
     }
 
     /** 새 주문은 [OPEN_AT]~[SEND_UNTIL] 사이에만 보낸다. */

@@ -10,6 +10,7 @@ import com.autotrading.app.TradingApp
 import com.autotrading.core.Etf
 import com.autotrading.core.Profile
 import com.autotrading.engine.MonthlyRun
+import com.autotrading.engine.MonthlyRunner.Companion.KST
 import com.autotrading.kis.Account
 import com.autotrading.kis.KisCredentials
 import com.autotrading.kis.KisException
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.YearMonth
 
 data class UiState(
     val loaded: Boolean = false,
@@ -31,8 +33,11 @@ data class UiState(
     val status: String? = null,
     val running: Boolean = false,
     val exactAlarmAllowed: Boolean = true,
+    val month: YearMonth = YearMonth.now(KST),
     val current: MonthlyRun? = null,
     val history: List<MonthlyRun> = emptyList(),
+    /** 읽을 수 없는 실행 기록 파일 이름. */
+    val unreadable: List<String> = emptyList(),
 )
 
 /** 키 입력 화면 상태. 키 값은 화면 입력란에만 있고 여기에는 결과 문구만 둔다. */
@@ -47,12 +52,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refresh() {
         viewModelScope.launch {
-            _state.value = withContext(Dispatchers.IO) { load() }
+            _state.value = withContext(Dispatchers.IO) {
+                try {
+                    load()
+                } catch (e: Exception) {
+                    // 화면이 죽지 않게 이전 상태를 유지한다. 메시지에 비밀이 섞일 수 있어 종류만
+                    _state.value.copy(loaded = true, status = "화면 정보를 읽지 못했습니다: ${e.javaClass.simpleName}")
+                }
+            }
         }
     }
 
     private fun load(): UiState {
         val settings = graph.settings
+        val history = graph.runs.history()
+        val month = graph.month()
         return UiState(
             loaded = true,
             maskedAccount = graph.secrets.load()?.account?.masked,
@@ -63,8 +77,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             status = settings.status,
             running = RunService.isRunning,
             exactAlarmAllowed = graph.alarms.canScheduleExact,
-            current = graph.currentRun(),
-            history = graph.runs.all(),
+            month = month,
+            current = history.runs.firstOrNull { it.month == month },
+            history = history.runs,
+            unreadable = history.unreadable,
         )
     }
 
@@ -114,6 +130,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun runNow() {
         RunService.start(getApplication())
+        refresh()
+    }
+
+    /** 실패한 이번 달을 다시 시도한다 (engine이 미체결 주문이 없을 때만 진행). */
+    fun retry() {
+        RunService.start(getApplication(), retry = true)
         refresh()
     }
 

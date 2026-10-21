@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Instant
 
+private const val ORDER = """"output":{"KRX_FWDG_ORD_ORGNO":"06010","ODNO":"0001569157","ORD_TMD":"091000"}"""
 private const val BUYING_POWER = """"output":{"ord_psbl_cash":"1000000","nrcvb_buy_amt":"990000"}"""
 
 class KisHttpTest {
@@ -71,6 +72,25 @@ class KisHttpTest {
         val e = assertThrows<KisException.Auth> { kis.client.buyingPower() }
         assertEquals("EGW00121", e.code)
         assertEquals(4, kis.server.requestCount)
+    }
+
+    @Test
+    fun `토큰 발급 서버 오류는 인증 실패가 아니라 다시 시도한다 - 주문도 한 번만 보낸다`() {
+        kis.enqueue(json("<html>Internal Server Error</html>", 500), json(TOKEN_JSON), ok(ORDER))
+
+        kis.client.placeMarketOrder("069500", Side.SELL, 3)
+
+        assertEquals(listOf("/oauth2/tokenP", "/oauth2/tokenP"), List(2) { kis.take().path })
+        assertEquals("VTTC0011U", kis.take().getHeader("tr_id"))
+        assertEquals(3, kis.server.requestCount)
+    }
+
+    @Test
+    fun `토큰 발급 서버 오류가 계속되면 Transport`() {
+        repeat(KisHttp.MAX_ATTEMPTS) { kis.enqueue(json("", 503)) }
+
+        assertThrows<KisException.Transport> { kis.client.buyingPower() }
+        assertEquals(KisHttp.MAX_ATTEMPTS, kis.server.requestCount)
     }
 
     @Test

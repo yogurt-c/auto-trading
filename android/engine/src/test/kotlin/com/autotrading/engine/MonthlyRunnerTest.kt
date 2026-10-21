@@ -177,6 +177,67 @@ class MonthlyRunnerTest {
     }
 
     @Test
+    fun `실패한 달은 그날 다시 시도하면 이전 주문과 구분해 새로 주문하고 완료한다`() {
+        broker.positions += mapOf(KODEX200 to 141, SP500 to 227)
+        broker.cash = 50_000
+        broker.fill = FakeBroker.Fill.NEVER
+        assertInstanceOf(Outcome.Failed::class.java, execute(Profile.CONSERVATIVE))
+        assertInstanceOf(Outcome.Failed::class.java, execute(Profile.CONSERVATIVE), "execute는 실패한 run을 다시 진행하지 않는다")
+
+        broker.fill = FakeBroker.Fill.NOW
+        val run = assertInstanceOf(Outcome.Done::class.java, runner().retry(NOV, Profile.STABLE)).run
+
+        assertEquals(Profile.CONSERVATIVE, run.profile, "실패한 run의 성향 유지")
+        assertEquals(1, run.attempt)
+        assertEquals(listOf(0, 0, 1, 1, 1), run.orders.map { it.attempt })
+        assertTrue(run.orders.none { it.open })
+        assertEquals(listOf(KODEX200, SP500, KODEX200, SP500, KTB3Y), broker.placed.map { it.code })
+        assertTrue(broker.positions.getValue(KTB3Y) > 0)
+    }
+
+    @Test
+    fun `취소되지 않은 미체결 주문이 남아 있으면 다시 시도하지 않는다`() {
+        broker.positions += mapOf(KODEX200 to 141, SP500 to 227)
+        broker.cash = 50_000
+        broker.fill = FakeBroker.Fill.NEVER
+        broker.failNext["cancel"] = KisException.Rejected("APBK0919", "취소 불가")
+        assertInstanceOf(Outcome.Failed::class.java, execute(Profile.CONSERVATIVE))
+        val placed = broker.placed.size
+
+        val failed = assertInstanceOf(Outcome.Failed::class.java, runner().retry(NOV, Profile.CONSERVATIVE)).run
+
+        assertTrue(failed.failure.orEmpty().startsWith("미체결 주문이 남아 있어"), failed.failure)
+        assertEquals(placed, broker.placed.size)
+        assertEquals(0, store.load(NOV)?.attempt, "저장된 run은 그대로")
+    }
+
+    @Test
+    fun `다음 거래일에 다시 시도하면 전날 미체결은 소멸한 것으로 보고 진행한다`() {
+        broker.positions += mapOf(KODEX200 to 141, SP500 to 227)
+        broker.cash = 50_000
+        broker.fill = FakeBroker.Fill.NEVER
+        broker.failNext["cancel"] = KisException.Rejected("APBK0919", "취소 불가")
+        assertInstanceOf(Outcome.Failed::class.java, execute(Profile.CONSERVATIVE))
+
+        broker.fill = FakeBroker.Fill.NOW
+        broker.prevDate = LocalDate.of(2026, 11, 2)
+        time.set(LocalDateTime.of(2026, 11, 3, 9, 10))
+        val run = assertInstanceOf(Outcome.Done::class.java, runner().retry(NOV, Profile.CONSERVATIVE)).run
+
+        assertEquals(LocalDate.of(2026, 11, 3), run.tradeDate)
+        assertTrue(broker.positions.getValue(KTB3Y) > 0)
+    }
+
+    @Test
+    fun `실패하지 않은 달의 다시 시도는 일반 실행과 같다`() {
+        broker.cash = 10_000_000
+
+        assertInstanceOf(Outcome.Done::class.java, runner().retry(NOV, Profile.STABLE))
+        assertInstanceOf(Outcome.Done::class.java, runner().retry(NOV, Profile.STABLE))
+        assertEquals(2, broker.placed.size)
+    }
+
+    @Test
     fun `전일 종가가 없으면 주문 없이 실패`() {
         broker.cash = 10_000_000
         val run = MonthlyRunner(

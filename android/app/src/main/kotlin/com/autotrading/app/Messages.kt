@@ -2,11 +2,13 @@ package com.autotrading.app
 
 import com.autotrading.core.Etf
 import com.autotrading.core.Profile
+import com.autotrading.engine.MonthlyRun
 import com.autotrading.engine.MonthlyRunner.Companion.KST
 import com.autotrading.engine.Outcome
 import com.autotrading.engine.RunSchedule
 import com.autotrading.engine.RunState
 import java.time.Instant
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -33,6 +35,10 @@ object Messages {
     }
 
     fun etf(code: String): String = Etf.entries.firstOrNull { it.code == code }?.displayName ?: code
+
+    /** 끝나지 못한 채 달이 바뀐 run은 진행 상태 대신 "중단됨"으로 보여준다. */
+    fun state(run: MonthlyRun, current: YearMonth): String =
+        if (run.isAbandoned(current)) "중단됨 (다음 달이 이어받음)" else state(run.state)
 
     fun state(state: RunState): String = when (state) {
         RunState.SCHEDULED -> "대기"

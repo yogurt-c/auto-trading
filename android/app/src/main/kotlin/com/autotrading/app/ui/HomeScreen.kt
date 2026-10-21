@@ -22,9 +22,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.autotrading.app.Messages
 import com.autotrading.engine.MonthlyRun
+import com.autotrading.engine.RunState
+import java.time.YearMonth
 
 @Composable
-fun HomeScreen(state: UiState, onAutoRun: (Boolean) -> Unit, onRunNow: () -> Unit) {
+fun HomeScreen(state: UiState, onAutoRun: (Boolean) -> Unit, onRunNow: () -> Unit, onRetry: () -> Unit) {
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -56,7 +58,14 @@ fun HomeScreen(state: UiState, onAutoRun: (Boolean) -> Unit, onRunNow: () -> Uni
         }
         Muted("새 주문은 09:05~15:00에만 보냅니다. 이번 달이 이미 끝났으면 아무것도 하지 않습니다.")
 
-        state.current?.let { RunCard("이번 달", it) }
+        if (state.current?.state == RunState.FAILED) {
+            OutlinedButton(onClick = onRetry, enabled = !state.running, modifier = Modifier.fillMaxWidth()) {
+                Text("이번 달 다시 시도")
+            }
+            Muted("미체결 주문이 남아 있지 않을 때만, 오늘 잔고로 처음부터 다시 계획합니다. 이전 주문 기록은 남습니다.")
+        }
+
+        state.current?.let { RunCard("이번 달", it, state.month) }
     }
 }
 
@@ -75,8 +84,8 @@ private fun ExactAlarmWarning() {
 
 /** 한 달 실행 요약 + 주문·체결 목록. 기록 화면에서도 쓴다. */
 @Composable
-fun RunCard(title: String, run: MonthlyRun) {
-    Section("$title · ${run.month} · ${Messages.state(run.state)}") {
+fun RunCard(title: String, run: MonthlyRun, current: YearMonth) {
+    Section("$title · ${run.month} · ${Messages.state(run, current)}") {
         Muted("${Messages.profile(run.profile)}${run.tradeDate?.let { " · 거래일 $it" }.orEmpty()}")
         if (run.equity > 0) Text("총자산 ${Messages.won(run.equity)}")
         if (run.targets.isNotEmpty()) {

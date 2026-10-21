@@ -25,6 +25,7 @@ internal class KisResponse(val body: JsonObject, val trCont: String)
  * 공통 헤더·토큰·호출 간격·재시도. 재시도 규칙:
  * - 호출 한도(EGW00201)·토큰 만료: 처리되지 않은 요청이므로 조회·주문 모두 다시 보낸다
  * - 네트워크 끊김·응답 본문 없는 5xx: 조회만 다시 보낸다. 주문은 접수됐을 수 있어 [KisException.Transport]
+ * - 토큰 발급 실패(연결·5xx): 요청을 보내기 전이므로 조회·주문 모두 다시 시도한다
  */
 internal class KisHttp(
     private val http: OkHttpClient,
@@ -61,7 +62,12 @@ internal class KisHttp(
         var failure: KisException? = null
         for (attempt in 0 until MAX_ATTEMPTS) {
             if (attempt > 0) sleeper.sleep(BACKOFF_MILLIS * attempt)
-            val built = request().authorize(trId).build()
+            val built = try {
+                request().authorize(trId).build()
+            } catch (e: KisException.Transport) {
+                failure = e // 토큰 발급 실패 — 요청을 보내기 전이라 주문도 다시 시도해도 안전하다
+                continue
+            }
             val (status, body, trCont) = try {
                 execute(built)
             } catch (e: IOException) {
@@ -140,6 +146,8 @@ internal class KisHttp(
         if (body == null || value.isNullOrBlank()) {
             val code = body?.string("error_code").orEmpty()
             if (code == TOKEN_ISSUE_LIMITED) throw KisException.TokenIssueLimited()
+            // 본문 없는 응답·5xx는 서버 일시 장애 — 키 문제(Auth, 재시도 안 함)로 보지 않는다
+            if (body == null || status >= 500) throw KisException.Transport("KIS 토큰 발급 응답 오류 (HTTP $status)")
             throw KisException.Auth(code.ifEmpty { "HTTP $status" }, body?.string("error_description").orEmpty())
         }
         val expiresAt = body.string("access_token_token_expired")

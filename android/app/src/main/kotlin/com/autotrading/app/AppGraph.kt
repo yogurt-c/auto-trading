@@ -7,7 +7,7 @@ import com.autotrading.engine.KisBroker
 import com.autotrading.engine.MonthlyRun
 import com.autotrading.engine.MonthlyRunner
 import com.autotrading.engine.MonthlyRunner.Companion.KST
-import com.autotrading.engine.Outcome
+import com.autotrading.engine.RunCoordinator
 import com.autotrading.engine.RunSchedule
 import com.autotrading.kis.KisClient
 import com.autotrading.kis.KisEnvironment
@@ -29,13 +29,15 @@ class AppGraph(context: Context) {
     val notifier = Notifier(context)
     val clock: Clock = Clock.system(KST)
     private val schedule = RunSchedule(calendar)
+    private val coordinator = RunCoordinator(schedule, clock)
 
     fun client(secrets: KisSecrets): KisClient =
         KisClient.create(ENV, secrets.credentials, secrets.account, tokens)
 
     fun month(): YearMonth = YearMonth.from(clock.instant().atZone(KST))
 
-    fun currentRun(): MonthlyRun? = runs.load(month())
+    /** 읽을 수 없으면 null — 실행은 engine에서 다시 읽다 실패해 오류 알림으로 드러난다. */
+    fun currentRun(): MonthlyRun? = runCatching { runs.load(month()) }.getOrNull()
 
     /** 부팅·앱 실행·설정 변경 때. 자동 실행이 켜져 있고 키·성향이 있으면 다음 알람을 건다. */
     fun reschedule() {
@@ -52,8 +54,8 @@ class AppGraph(context: Context) {
         if (settings.autoRun) alarms.set(clock.instant().plus(WATCHDOG))
     }
 
-    /** [RunService]의 작업 스레드에서 호출한다 (블로킹, 최대 약 1시간). */
-    fun runOnce() {
+    /** [RunService]의 작업 스레드에서 호출한다 (블로킹, 최대 약 1시간). [retry]면 실패한 이번 달을 다시 시도한다. */
+    fun runOnce(retry: Boolean) {
         val secrets = secrets.load()
         val profile = settings.profile
         if (secrets == null || profile == null) {
@@ -61,18 +63,20 @@ class AppGraph(context: Context) {
             reschedule() // watchdog 알람을 지운다
             return
         }
-        val outcome = try {
-            MonthlyRunner(
+        val report = coordinator.run(settings.autoRun) {
+            val runner = MonthlyRunner(
                 KisBroker(client(secrets)), runs, calendar, clock, Sleeper.THREAD, ENV, realTradingUnlocked = false,
-            ).execute(month(), profile)
-        } catch (e: Exception) {
-            // engine이 처리하지 못한 오류 (파일 I/O 등). 메시지에 비밀이 섞일 수 있어 종류만 남긴다
-            Outcome.RetryLater(clock.instant().plus(UNEXPECTED_RETRY), "예상하지 못한 오류: ${e.javaClass.simpleName}")
+            )
+            if (retry) runner.retry(month(), profile) else runner.execute(month(), profile)
         }
-        val status = Messages.of(outcome)
-        settings.status = status.text
-        if (settings.autoRun) arm(schedule.after(outcome, clock.instant())) else settings.nextRunAt = null
-        if (status.notify) notifier.result(status.text)
+        val text = Messages.of(report.outcome).text
+        settings.status = text
+        val next = report.nextRunAt
+        if (next != null) arm(next) else settings.nextRunAt = null
+        when {
+            report.unexpectedError != null -> notifier.error(text)
+            report.notify -> notifier.result(text)
+        }
     }
 
     private fun arm(at: Instant) {
@@ -84,6 +88,5 @@ class AppGraph(context: Context) {
         /** 실전은 이 버전에서 잠겨 있다 — 모의투자만. */
         val ENV = KisEnvironment.PAPER
         private val WATCHDOG: Duration = Duration.ofMinutes(15)
-        private val UNEXPECTED_RETRY: Duration = Duration.ofMinutes(10)
     }
 }
