@@ -31,7 +31,7 @@ class RunService : Service() {
         if (running.compareAndSet(false, true)) {
             thread(name = "monthly-run") {
                 try {
-                    graph.runOnce()
+                    graph.runOnce(retry = intent?.getBooleanExtra(EXTRA_RETRY, false) == true)
                 } finally {
                     running.set(false)
                     stopSelf()
@@ -47,8 +47,11 @@ class RunService : Service() {
         val isRunning: Boolean get() = running.get()
 
         /** 화면(앞에 있을 때)이나 정확한 알람에서만 부른다 — 그 외 백그라운드 시작은 Android 12+에서 막힌다. */
-        fun start(context: Context) {
-            ContextCompat.startForegroundService(context, Intent(context, RunService::class.java))
+        fun start(context: Context, retry: Boolean = false) {
+            val intent = Intent(context, RunService::class.java).putExtra(EXTRA_RETRY, retry)
+            ContextCompat.startForegroundService(context, intent)
         }
+
+        private const val EXTRA_RETRY = "retry"
     }
 }

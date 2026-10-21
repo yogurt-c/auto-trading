@@ -33,6 +33,8 @@ data class OrderRecord(
     val filledQty: Int = 0,
     val avgPrice: Double = 0.0,
     val open: Boolean = true,
+    /** 보낸 시점의 [MonthlyRun.attempt]. 같은 날 다시 시도하면 이전 시도의 주문과 구분한다. */
+    val attempt: Int = 0,
 )
 
 @Serializable
@@ -55,8 +57,16 @@ data class MonthlyRun(
     val orders: List<OrderRecord> = emptyList(),
     @Serializable(InstantSerializer::class) val phaseStartedAt: Instant? = null,
     val failure: String? = null,
+    /** 실패 후 다시 시도한 횟수 ([MonthlyRunner.retry]). */
+    val attempt: Int = 0,
 ) {
     val isFinished: Boolean get() = state == RunState.DONE || state == RunState.FAILED
+
+    /** 끝나지 못한 채 달이 바뀌었다 — 새 달 run이 그날 잔고로 이어받았으므로 더 진행하지 않는다. */
+    fun isAbandoned(current: YearMonth): Boolean = !isFinished && month < current
+
+    /** [day]에 이번 시도로 보낸 주문. */
+    fun ordersOf(day: LocalDate): List<OrderRecord> = orders.filter { it.date == day && it.attempt == attempt }
 
     fun toJson(): String = JSON.encodeToString(serializer(), this)
 

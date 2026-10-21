@@ -30,12 +30,15 @@ class FileRunStore(private val dir: File) : RunStore {
         Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
-    /** 기록 화면용. 최근 달부터. */
+    /** 기록 화면용 (최근 달부터). 읽을 수 없는 파일 하나 때문에 화면이 죽지 않도록 따로 모은다. */
+    data class History(val runs: List<MonthlyRun>, val unreadable: List<String>)
+
     @Synchronized
-    fun all(): List<MonthlyRun> =
-        dir.listFiles { f -> PATTERN.matches(f.name) }.orEmpty()
-            .sortedByDescending { it.name }
-            .map { MonthlyRun.fromJson(it.readText()) }
+    fun history(): History {
+        val files = dir.listFiles { f -> PATTERN.matches(f.name) }.orEmpty().sortedByDescending { it.name }
+        val read = files.map { it.name to runCatching { MonthlyRun.fromJson(it.readText()) }.getOrNull() }
+        return History(read.mapNotNull { it.second }, read.filter { it.second == null }.map { it.first })
+    }
 
     private fun fileOf(month: YearMonth) = File(dir, "run-$month.json")
 

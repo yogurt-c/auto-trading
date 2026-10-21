@@ -70,8 +70,20 @@ class FileRunStoreTest {
         store.save(nov.copy(state = RunState.PLANNED))
 
         assertEquals(RunState.PLANNED, FileRunStore(dir).load(nov.month)?.state)
-        assertEquals(listOf(nov.month, oct.month), store.all().map { it.month })
+        assertEquals(listOf(nov.month, oct.month), store.history().runs.map { it.month })
         assertEquals(null, store.load(YearMonth.of(2026, 9)))
         assertEquals(setOf("run-2026-10.json", "run-2026-11.json"), dir.list()!!.toSet(), "임시 파일이 남지 않는다")
+    }
+
+    @Test
+    fun `읽을 수 없는 파일은 건너뛰고 이름만 알린다`() {
+        val store = FileRunStore(dir)
+        store.save(MonthlyRun(YearMonth.of(2026, 11), Profile.STABLE))
+        File(dir, "run-2026-10.json").writeText("{깨진")
+
+        val history = store.history()
+
+        assertEquals(listOf(YearMonth.of(2026, 11)), history.runs.map { it.month })
+        assertEquals(listOf("run-2026-10.json"), history.unreadable)
     }
 }
